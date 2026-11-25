@@ -1371,11 +1371,27 @@ class HybridModeArbiter:
         else:
             lines = int(getattr(self.app, "rx_current_line", 0))
             drawing = lines >= 3 and not getattr(self.app, "waiting_after_stop", False)
-            cur = (
-                f"Carte WEFAX en cours ({lines} lignes)"
-                if drawing
-                else "WEFAX : attente de la carte suivante"
-            )
+            if drawing:
+                cur = f"Carte WEFAX en cours ({lines} lignes)"
+            else:
+                # 2.12.0 — afficher la prochaine carte avec compte à rebours
+                try:
+                    delay_sec, code, desc, when_str, fam, _elapsed = self.get_next_wefax_countdown()
+                    if delay_sec is not None and delay_sec >= 0:
+                        mins = int(delay_sec // 60)
+                        if mins <= 0:
+                            countdown = "imminente"
+                        elif mins == 1:
+                            countdown = "dans 1 min"
+                        else:
+                            countdown = f"dans {mins} min"
+                        # Tronquer la description si trop longue pour la barre
+                        short_desc = desc if len(desc) <= 55 else desc[:52] + "…"
+                        cur = f"⏱ {short_desc} [{code}] · {countdown}"
+                    else:
+                        cur = "WEFAX : attente de la carte suivante"
+                except Exception:
+                    cur = "WEFAX : attente de la carte suivante"
         entries = self.upcoming_entries(now, n=n + 2)
         if entries:
             later = " · ".join(entries)

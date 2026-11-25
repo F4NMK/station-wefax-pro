@@ -262,6 +262,13 @@ class RadioLinkMixin:
         if changed or getattr(self, "_hotplug_pending", False):
             self._hotplug_pending = False
             self.log_event("🔌 Poste à rebrancher / rebranché : reconnexion automatique CAT + audio…")
+            # 2.12.0 — forcer la fermeture du port "fantôme" (l'objet serial peut encore
+            # indiquer port_open=True après un débranchement/rebranchement USB rapide).
+            if self.radio.port_open:
+                try:
+                    self.radio.disconnect()
+                except Exception:
+                    pass
             # même mécanique que le démarrage : essais silencieux toutes les 15 s, scan dès que ça répond
             self._startup_waiting_radio = False
             self._startup_radio_warned = False
@@ -684,6 +691,43 @@ class RadioLinkMixin:
                 padx=8,
                 pady=3,
             )
+        self._update_auto_btn()
+
+    # 2.12.0 — bouton « Rendre la main à l'automatique »
+    def _update_auto_btn(self):
+        """Affiche le bouton ⟳ Auto uniquement quand le contrôle automatique est suspendu."""
+        btn = getattr(self, "btn_auto_restore", None)
+        if btn is None:
+            return
+        arb = getattr(self, "hybrid_arbiter", None)
+        # Le contrôle n'est plus automatique si : mode MANUEL explicite, ou manual_hold actif
+        # (pause manuelle entre deux cartes), ou mode RELECTURE.
+        manual_active = False
+        if arb is not None:
+            manual_active = (
+                arb.requested_mode in ("MANUEL", "RELECTURE")
+                or getattr(arb, "manual_hold", False)
+            )
+        try:
+            if manual_active:
+                btn.configure(bg="#b45309", fg="#ffffff", relief="raised")
+                btn.grid()       # rendre visible
+            else:
+                btn.grid_remove()  # cacher
+        except Exception:
+            pass
+
+    def _give_back_to_auto(self):
+        """Réactive le mode automatique HYBRIDE depuis n'importe quel état manuel."""
+        arb = getattr(self, "hybrid_arbiter", None)
+        if arb is None:
+            return
+        try:
+            arb.resume_automation()
+            arb.set_requested_mode("HYBRIDE", user_initiated=True)
+        except Exception as exc:
+            self.log_event(f"⚠️ Impossible de rendre la main à l'automatique : {exc!r}")
+        self._update_auto_btn()
 
     def _sync_ui_cockpit(self):
         self._sync_ui_hardware_widgets()

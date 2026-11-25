@@ -120,7 +120,7 @@ class MenusMixin:
                     value=value,
                     command=lambda v=value: arb.set_requested_mode(v, True),
                 )
-            m.add_cascade(label="Mode de réception", menu=mode)
+            m.add_cascade(label="Mode de réception ▶", menu=mode)
         if hasattr(self, "auto_record_var"):
             rec = self._menu(m)
             rec.add_command(label="Démarrer / arrêter l'enregistrement", command=self._toggle_recording)
@@ -132,7 +132,7 @@ class MenusMixin:
             rec.add_command(label="Arrêter la relecture", command=lambda: self._stop_replay("Arrêt opérateur"))
             rec.add_separator()
             rec.add_command(label="Ouvrir le dossier des enregistrements", command=self._open_recordings_dir)
-            m.add_cascade(label="Enregistrement audio", menu=rec)
+            m.add_cascade(label="Enregistrement audio ▶", menu=rec)
         bar.add_cascade(label="Réception", menu=m)
 
         # ---- Cartes
@@ -191,7 +191,7 @@ class MenusMixin:
         rescan = self._menu(m)
         for val in ("Jamais", "Confirmation", "Automatique"):
             rescan.add_radiobutton(label=val, variable=self.qsy_policy, value=val)
-        m.add_cascade(label="Nouveau scan quand le signal se perd", menu=rescan)
+        m.add_cascade(label="Nouveau scan quand le signal se perd ▶", menu=rescan)
         m.add_checkbutton(label="Empêcher la mise en veille de l'ordinateur", variable=self.prevent_sleep)
         if planner is not None:
             if not hasattr(self, "_net_var"):

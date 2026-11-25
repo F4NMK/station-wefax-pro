@@ -338,6 +338,16 @@ class LayoutMixin:
         self.btn_stations = tk.Button(band, text="Stations", command=self._open_scan_results)
         self.btn_stations.grid(row=0, column=5, padx=3)
         self._btn_stations_bg = self.btn_stations.cget("bg")
+        # 2.12.0 — bouton « Rendre la main à l'automatique » : visible/actif dès que le contrôle n'est
+        # plus automatique (mode MANUEL, pause manuelle, etc.). Un clic restaure le mode HYBRIDE.
+        self.btn_auto_restore = tk.Button(
+            band,
+            text="⟳ Auto",
+            command=self._give_back_to_auto,
+            relief="raised",
+        )
+        self.btn_auto_restore.grid(row=0, column=6, padx=3)
+        self.btn_auto_restore.grid_remove()  # caché par défaut ; affiché par _update_auto_btn()
 
         box = tk.Frame(self.diagnostics_window, bg="#0b1424", padx=8, pady=8)
         box.pack(fill="both", expand=True)
