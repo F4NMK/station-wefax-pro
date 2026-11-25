@@ -695,18 +695,23 @@ class RadioLinkMixin:
 
     # 2.12.0 — bouton « Rendre la main à l'automatique »
     def _update_auto_btn(self):
-        """Affiche le bouton ⟳ Auto uniquement quand le contrôle automatique est suspendu."""
+        """Affiche le bouton ⟳ Auto uniquement quand le contrôle automatique est suspendu.
+
+        Trois cas couverts :
+        - mode MANUEL ou RELECTURE (requested_mode explicitement non-automatique)
+        - manual_hold = True (pause manuelle entre deux cartes)
+        - operator_choice non nul (choix de station depuis la fenêtre Stations)
+        """
         btn = getattr(self, "btn_auto_restore", None)
         if btn is None:
             return
         arb = getattr(self, "hybrid_arbiter", None)
-        # Le contrôle n'est plus automatique si : mode MANUEL explicite, ou manual_hold actif
-        # (pause manuelle entre deux cartes), ou mode RELECTURE.
         manual_active = False
         if arb is not None:
             manual_active = (
                 arb.requested_mode in ("MANUEL", "RELECTURE")
                 or getattr(arb, "manual_hold", False)
+                or getattr(arb, "operator_choice", None) is not None
             )
         try:
             if manual_active:
@@ -718,11 +723,21 @@ class RadioLinkMixin:
             pass
 
     def _give_back_to_auto(self):
-        """Réactive le mode automatique HYBRIDE depuis n'importe quel état manuel."""
+        """Réactive le mode automatique HYBRIDE depuis n'importe quel état manuel.
+
+        Couvre les trois cas possibles :
+        - mode MANUEL / RELECTURE → resume_automation + set_requested_mode("HYBRIDE")
+        - manual_hold actif → idem
+        - choix de station (operator_choice) → release_manual_hold + callback _on_manual_hold_changed
+        """
         arb = getattr(self, "hybrid_arbiter", None)
         if arb is None:
             return
         try:
+            # Libérer le choix de station (operator_choice) si actif
+            if getattr(arb, "operator_choice", None) is not None:
+                arb.release_manual_hold("Bouton ⟳ Auto : main rendue à l'automatique")
+            # Rendre la main dans tous les cas (sans effet secondaire si déjà en HYBRIDE)
             arb.resume_automation()
             arb.set_requested_mode("HYBRIDE", user_initiated=True)
         except Exception as exc:

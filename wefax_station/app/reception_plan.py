@@ -135,7 +135,12 @@ class ReceptionPlanMixin:
         self._on_manual_hold_changed()
 
     def _on_manual_hold_changed(self):
-        """Bouton « Stations » de l'écran principal : montre le choix opérateur en cours."""
+        """Bouton « Stations » de l'écran principal : montre le choix opérateur en cours.
+
+        Synchronise aussi le bouton ⟳ Auto (2.13.0) : un choix de station active
+        operator_choice sans changer requested_mode, donc _update_auto_btn doit être
+        appelé ici pour que le bouton orange apparaisse / disparaisse correctement.
+        """
         btn = getattr(self, "btn_stations", None)
         if btn is None:
             return
@@ -148,6 +153,9 @@ class ReceptionPlanMixin:
                 btn.configure(text="Stations", bg=getattr(self, "_btn_stations_bg", "SystemButtonFace"), fg="black")
         except Exception:
             pass
+        # Synchroniser le bouton ⟳ Auto avec l'état du choix de station
+        if hasattr(self, "_update_auto_btn"):
+            self._update_auto_btn()
 
     # ------------------------------------------------------------- actions
     def _tune_from_tree(self, tree):
