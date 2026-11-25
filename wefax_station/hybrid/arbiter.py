@@ -5,7 +5,7 @@ import json
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from tkinter import messagebox
+from tkinter import messagebox  # TODO PyQt6 : remplacer par un signal ou callback
 import numpy as np
 from wefax_station.core.stations import (
     RTTY_WEATHER_STATIONS,
@@ -697,7 +697,7 @@ class HybridModeArbiter:
             return
         if not self.app.radio.handshake_ok or not self.app.audio_live_connected:
             if not family_filter:
-                messagebox.showwarning(
+                messagebox.showwarning(  # TODO PyQt6 : QMessageBox.warning()
                     "Scan RTTY",
                     "Une liaison CAT vérifiée et un flux audio USB actif sont requis pour scanner les fréquences RTTY.",
                 )
@@ -758,7 +758,7 @@ class HybridModeArbiter:
                     self.app.bulletins_ui.refresh_status(scanning_station=st)
             except Exception:
                 pass
-            self.app.root.after(1450, lambda s=st: _measure(s, []))
+            self.app.root.after(1450, lambda s=st: _measure(s, []))  # TODO PyQt6 : QTimer.singleShot()
 
         def _measure(st, samples):
             if not self.rtty_scan_active:

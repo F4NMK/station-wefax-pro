@@ -260,7 +260,11 @@ class ScheduleSyncAndPlanner:
             self.app.log_event("Ouverture du document impossible : " + repr(exc))
 
     def open_sources_window(self, refresh=True):
-        """Fenêtre « Programmes : sources officielles » : état, différences, Accepter / Refuser / Ouvrir."""
+        """Fenêtre « Programmes : sources officielles » : état, différences, Accepter / Refuser / Ouvrir.
+
+        TODO PyQt6 : extraire cette fenêtre dans app/sources_dialog.py (QDialog),
+        planner.py ne devrait pas contenir de code UI.
+        """
         import tkinter as tk
 
         from wefax_station.ui.placement import show_over_root

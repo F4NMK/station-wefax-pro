@@ -1,4 +1,8 @@
-"""Fenêtre téléscripteur RTTY, rapport ADRASEC et aide qualité."""
+"""Fenêtre téléscripteur RTTY, rapport ADRASEC et aide qualité.
+
+TODO PyQt6 : ce fichier est une UI complète placée dans hybrid/ par raison historique.
+À déplacer dans app/rtty_window.py lors de la migration (renommer la classe RTTYWindow).
+"""
 
 from datetime import datetime, timezone
 from pathlib import Path
