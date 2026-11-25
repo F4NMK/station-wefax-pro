@@ -143,41 +143,6 @@ def parse_point_forecasts(text, repaired=False):
     return list(latest.values())
 
 
-def summarize_fr(points, max_points=12):
-    """Lignes de résumé en français, une par point de prévision."""
-    out = []
-    for p in points[:max_points]:
-        steps = p["steps"]
-        worst = max(steps, key=lambda s: (max(s["bft_max"], s.get("gust_max") or 0), s["sea_m"]))
-        gust_max = max((s.get("gust_max") or 0) for s in steps)
-        dirs = {}
-        for s in steps:
-            dirs[s["dir"]] = dirs.get(s["dir"], 0) + 1
-        main_dir = max(dirs, key=dirs.get)
-        sea_max = max(s["sea_m"] for s in steps)
-        wx = sorted({w for s in steps for w in s["wx"]})
-        first, last = steps[0], steps[-1]
-        txt = (
-            f"{p['point']} ({abs(p['lat']):.1f}°{'N' if p['lat'] >= 0 else 'S'} "
-            f"{abs(p['lon']):.1f}°{'E' if p['lon'] >= 0 else 'O'}) — du {first['day']} {first['date']} "
-            f"{first['hour']:02d} h au {last['day']} {last['date']} {last['hour']:02d} h UTC : vent dominant "
-            f"{main_dir}, force max {worst['bft_max']} Beaufort ({worst['day']} {worst['date']} {worst['hour']:02d} h, "
-            f"{worst['dir']}), "
-            + (f"rafales jusqu'à {gust_max} Beaufort, " if gust_max else "")
-            + f"mer jusqu'à {sea_max:g} m"
-        )
-        if p.get("water_c") is not None:
-            txt += f", eau {p['water_c']} °C"
-        if wx:
-            txt += ", " + ", ".join(wx)
-        out.append(txt + ".")
-        if worst["bft_max"] >= 7 or gust_max >= 8:
-            out.append(
-                f"   ⚠ {p['point']} : coup de vent possible (force {worst['bft_max']}"
-                + (f", rafales {gust_max}" if gust_max else "")
-                + ")."
-            )
-    return out
 
 
 def gale_warnings(text, translate=False):

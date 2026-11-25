@@ -193,5 +193,3 @@ def analyze_sweep(points, center_hz, span_hz, stations, guard_khz=1.6, floor_khz
     return out
 
 
-def visible_stations(center_khz, span_khz, stations, margin_khz=3.0):
-    return [s for s in stations if abs(float(s["freq"]) - center_khz) <= span_khz - margin_khz]

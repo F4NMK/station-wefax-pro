@@ -244,37 +244,6 @@ WEFAX_STAGES = [
 ]
 
 
-def get_current_and_next_broadcast(station_family: str = "DWD") -> tuple:
-    now_utc = datetime.now(timezone.utc)
-    cur_mins = now_utc.hour * 60 + now_utc.minute
-    sched = BROADCAST_SCHEDULES_UTC.get(station_family, BROADCAST_SCHEDULES_UTC["DWD"])
-    slots = [(h * 60 + m, f"{h:02d}:{m:02d} UTC", code, desc) for (h, m, code, desc) in sched]
-
-    current_slot = slots[-1]
-    next_slot = slots[0]
-    mins_until_next = (24 * 60 - cur_mins) + slots[0][0]
-
-    for i, s in enumerate(slots):
-        if s[0] <= cur_mins:
-            current_slot = s
-            if i + 1 < len(slots):
-                next_slot = slots[i + 1]
-                mins_until_next = next_slot[0] - cur_mins
-            else:
-                next_slot = slots[0]
-                mins_until_next = (24 * 60 - cur_mins) + slots[0][0]
-        else:
-            if i == 0:
-                current_slot = slots[-1]
-                next_slot = slots[0]
-                mins_until_next = s[0] - cur_mins
-            break
-
-    elapsed = (cur_mins - current_slot[0]) % (24 * 60)
-    live_tag = "🟢 ÉMISSION EN COURS" if elapsed <= 38 else "📄 DERNIÈRE CARTE"
-    cur_str = f"{live_tag} ({current_slot[1]}) : [{current_slot[2]}] {current_slot[3]}"
-    nxt_str = f"⏭️ SUIVANTE à {next_slot[1]} (dans {mins_until_next} min) : [{next_slot[2]}] {next_slot[3]}"
-    return cur_str, nxt_str
 
 
 def schedule_pair(slots, now):

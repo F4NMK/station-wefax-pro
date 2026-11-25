@@ -53,8 +53,6 @@ def partial_dir(day_dir):
     return Path(day_dir) / CARDS / PARTIAL
 
 
-def card_details_dir(day_dir):
-    return Path(day_dir) / CARDS / DETAILS
 
 
 def bulletins_dir(day_dir):

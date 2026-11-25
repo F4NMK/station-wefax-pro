@@ -258,9 +258,6 @@ def load_path_quality(udir):
     return pq
 
 
-def vara_registered(info):
-    ini = _read_ini(Path(info["vara_dir"]) / "VARA.ini") if info.get("vara_dir") else None
-    return bool(ini and any(ini.get("Setup", f"Callsign Licence {k}", fallback="").strip() for k in range(4)))
 
 
 def rank_gateways(udir, my_grid, hour_utc, modes=VARA_HF_MODES, max_km=2500, min_km=60, n=5, prefer_free=False):

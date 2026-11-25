@@ -518,9 +518,6 @@ class BulletinsAndHybridWindow:
         if self.window and self.window.winfo_exists():
             self.window.withdraw()
 
-    def _on_mode_selected(self):
-        self.arbiter.set_requested_mode(self.cmb_mode.get(), user_initiated=True)
-        self.refresh_status()
 
     def _on_rtty_station_selected(self, event=None):
         idx = self.cmb_rtty_st.current()

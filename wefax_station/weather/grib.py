@@ -171,11 +171,6 @@ def _bft(ms):
 DIR16 = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"]
 
 
-def _dist_km(a, b):
-    r = 6371.0
-    la1, lo1, la2, lo2 = map(math.radians, (a[0], a[1], b[0], b[1]))
-    h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2
-    return 2 * r * math.asin(math.sqrt(h))
 
 
 def _dist_grid_km(qth, lats, lons):
@@ -259,70 +254,3 @@ def report_lines(rows, label="GFS", received=None, now=None):
     return L
 
 
-def encode_simple(fields_spec):
-    """Encodeur GRIB 1 minimal (pour les tests) : liste de dict param, ref, step_h, la1, lo1, la2, lo2, di, dj, values."""
-    out = b""
-    for f in fields_spec:
-        vals = np.asarray(f["values"], dtype=float)
-        nj, ni = vals.shape
-        dscale = f.get("dscale", 1)
-        scaled = vals * 10**dscale
-        refv = math.floor(scaled.min())
-        nbits = 16
-        rng = scaled.max() - refv
-        escale = max(0, math.ceil(math.log2(rng / (2**nbits - 1)))) if rng > 0 else 0
-        packed = np.round((scaled - refv) / 2**escale).astype(np.int64).ravel()
-
-        def s_int(v, n):
-            return ((abs(v) | (1 << (8 * n - 1))) if v < 0 else v).to_bytes(n, "big")
-
-        def ibm(x):
-            if x == 0:
-                return b"\0\0\0\0"
-            sign = 0x80 if x < 0 else 0
-            x = abs(x)
-            e = 64
-            while x >= 1:
-                x /= 16
-                e += 1
-            while x < 1 / 16:
-                x *= 16
-                e -= 1
-            return bytes([sign | e]) + int(x * (1 << 24)).to_bytes(3, "big")
-
-        ref = f["ref"]
-        pds = bytearray(28)
-        pds[0:3] = (28).to_bytes(3, "big")
-        pds[3], pds[4], pds[5], pds[6], pds[7] = 2, 7, 81, 255, 0x80
-        pds[8], pds[9] = f["param"], 1
-        pds[12:17] = bytes([ref.year % 100 or 100, ref.month, ref.day, ref.hour, ref.minute])
-        pds[17], pds[18], pds[19], pds[20] = 1, f["step_h"], 0, 0
-        pds[24] = ref.year // 100 + 1
-        pds[26:28] = s_int(dscale, 2)
-        gds = bytearray(32)
-        gds[0:3] = (32).to_bytes(3, "big")
-        gds[3], gds[4], gds[5] = 0, 255, 0
-        gds[6:8] = ni.to_bytes(2, "big")
-        gds[8:10] = nj.to_bytes(2, "big")
-        gds[10:13] = s_int(int(f["la1"] * 1000), 3)
-        gds[13:16] = s_int(int(f["lo1"] * 1000), 3)
-        gds[16] = 0x80
-        gds[17:20] = s_int(int(f["la2"] * 1000), 3)
-        gds[20:23] = s_int(int(f["lo2"] * 1000), 3)
-        gds[23:25] = int(f["di"] * 1000).to_bytes(2, "big")
-        gds[25:27] = int(f["dj"] * 1000).to_bytes(2, "big")
-        gds[27] = 0x40 if f["la2"] > f["la1"] else 0x00
-        bits = np.zeros((len(packed), nbits), dtype=np.uint8)
-        for k in range(nbits):
-            bits[:, k] = (packed >> (nbits - 1 - k)) & 1
-        payload = np.packbits(bits.ravel()).tobytes()
-        bds_len = 11 + len(payload)
-        if bds_len % 2:
-            payload += b"\0"
-            bds_len += 1
-        unused = len(payload) * 8 - len(packed) * nbits
-        bds = bds_len.to_bytes(3, "big") + bytes([unused & 0x0F]) + s_int(escale, 2) + ibm(refv) + bytes([nbits]) + payload
-        body = bytes(pds) + bytes(gds) + bds + b"7777"
-        total = 8 + len(body)
-        out += b"GRIB" + total.to_bytes(3, "big") + b"\x01" + body
-    return out

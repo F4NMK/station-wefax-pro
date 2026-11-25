@@ -389,13 +389,6 @@ class HybridModeArbiter:
             text_quality = "aucun bulletin exploitable"
         last_chart = getattr(self.app, "last_saved_path", None)
 
-        def grade_words(rel):
-            return {
-                "A": "excellente : le texte reçu est fiable",
-                "B": "bonne : quelques caractères peuvent manquer",
-                "C": "moyenne : vérifier les chiffres importants",
-            }.get(rel["grade"], "faible : informations à confirmer par une autre source")
-
         bar = "=" * 78
         L = [
             bar,
@@ -503,25 +496,6 @@ class HybridModeArbiter:
             self.wefax_return_freq_khz = float(st_wf["freq"])
             self.wefax_return_station = str(st_wf["id"])
 
-    def is_wefax_signal_actively_present(self) -> bool:
-        if self.active_pipeline != "WEFAX":
-            return False
-        cur_f = float(getattr(self.app.radio, "actual_freq_khz", 0.0))
-        if not is_wefax_frequency(cur_f):
-            return False
-        if getattr(self.app, "waiting_after_stop", False):
-            return False
-        lines = int(getattr(self.app, "rx_current_line", 0))
-        if lines >= 3:
-            self.wefax_guard_until_mono = max(self.wefax_guard_until_mono, time.monotonic() + 300.0)
-            self.disarm_base_periodic_scan_timers()
-            return True
-        snr = float(getattr(self.app, "current_snr_db", 0.0))
-        if snr >= 8.5:
-            self.wefax_guard_until_mono = max(self.wefax_guard_until_mono, time.monotonic() + 180.0)
-            self.disarm_base_periodic_scan_timers()
-            return True
-        return False
 
     def flush_audio_backlogs(self):
         try:
