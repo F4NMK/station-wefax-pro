@@ -26,6 +26,7 @@ suivent ; une hausse rapide après une dépression, du vent fort et des grains s
 from datetime import datetime, timedelta, timezone
 
 from wefax_station.weather.plain_language import distance_km, level_of, sea_name, step_datetime, worst_level
+from wefax_station.weather.units import ms_to_beaufort
 
 LOCAL_KM = 150
 OBS_FRESH_H = 3.0
@@ -193,14 +194,6 @@ def _fmt_age(h):
     if h < 1:
         return f"il y a {max(1, round(h * 60))} min"
     return f"il y a {h:.0f} h" if h < 48 else f"il y a {h / 24:.0f} j"
-
-
-def _bft_of_ms(ms):
-    kn = ms * 1.94384
-    for f, lim in enumerate((1, 4, 7, 11, 17, 22, 28, 34, 41, 48, 56, 64)):
-        if kn < lim:
-            return f
-    return 12
 
 
 def _num(x):
@@ -450,8 +443,8 @@ def build_nowcast(
                 g_dp = (win[-1]["pressure_hpa"] - g_now["pressure_hpa"]) * 3.0 / hours
     grib_age = _age_h(now, grib_received)
     if g_win is not None:
-        b = _bft_of_ms(g_win.get("wind_ms", 0) or 0)
-        bm = _bft_of_ms(g_win.get("max_ms", g_win.get("wind_ms", 0)) or 0)
+        b = ms_to_beaufort(g_win.get("wind_ms", 0) or 0)
+        bm = ms_to_beaufort(g_win.get("max_ms", g_win.get("wind_ms", 0)) or 0)
         line = (
             f"Modèle GFS (GRIB reçu {_fmt_age(grib_age)}), échéance {g_win['valid']:%d/%m %H} UTC : "
             f"vent {dir_fr(g_win.get('wind_dir', ''))} force {b} au point de grille le plus proche"
@@ -477,7 +470,7 @@ def build_nowcast(
 
     # ---- 6. accord entre sources
     if fc_win is not None and g_win is not None:
-        diff = abs(fc_win["bft"] - _bft_of_ms(g_win.get("max_ms", g_win.get("wind_ms", 0)) or 0))
+        diff = abs(fc_win["bft"] - ms_to_beaufort(g_win.get("max_ms", g_win.get("wind_ms", 0)) or 0))
         pts = 15 if diff <= 1 else 5 if diff == 2 else -10
         score += pts
         reasons.append((f"prévision texte et modèle {'concordants' if diff <= 1 else 'proches' if diff == 2 else 'en désaccord'} (écart {diff} force{'s' if diff > 1 else ''})", pts))
@@ -519,7 +512,7 @@ def build_nowcast(
     # ---- synthèse : niveau, évolution, estimation chiffrée
     level = None
     if fc_win is not None or g_win is not None:
-        b = fc_win["bft"] if fc_win else _bft_of_ms(g_win.get("max_ms", g_win.get("wind_ms", 0)) or 0)
+        b = fc_win["bft"] if fc_win else ms_to_beaufort(g_win.get("max_ms", g_win.get("wind_ms", 0)) or 0)
         sea = (fc_win or {}).get("sea") or (g_win or {}).get("wave_max_m") or 0.0
         gust = (fc_win or {}).get("gust")
         level = level_of(b, sea, gust)

@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 
 import numpy as np
 
+from wefax_station.weather.units import ms_to_beaufort
+
 PARAMS = {
     2: ("PRMSL", "pression mer", "Pa"),
     7: ("HGT", "géopotentiel", "gpm"),
@@ -160,14 +162,6 @@ def _decode(msg):
     }
 
 
-def _bft(ms):
-    kn = ms * 1.94384
-    for f, lim in enumerate((1, 4, 7, 11, 17, 22, 28, 34, 41, 48, 56, 64)):
-        if kn < lim:
-            return f
-    return 12
-
-
 DIR16 = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSO", "SO", "OSO", "O", "ONO", "NO", "NNO"]
 
 
@@ -237,9 +231,9 @@ def report_lines(rows, label="GFS", received=None, now=None):
         parts = []
         if "wind_ms" in r:
             kn = r["wind_ms"] * 1.94384
-            parts.append(f"{r['wind_dir']} {kn:.0f} nds (force {_bft(r['wind_ms'])})")
+            parts.append(f"{r['wind_dir']} {kn:.0f} nds (force {ms_to_beaufort(r['wind_ms'])})")
         if "max_ms" in r:
-            parts.append(f"maxi secteur {r['max_ms'] * 1.94384:.0f} nds (force {_bft(r['max_ms'])})")
+            parts.append(f"maxi secteur {r['max_ms'] * 1.94384:.0f} nds (force {ms_to_beaufort(r['max_ms'])})")
         if "wave_max_m" in r:
             parts.append(f"vagues jusqu'à {r['wave_max_m']:.1f} m".replace(".", ","))
         if "pressure_hpa" in r:
