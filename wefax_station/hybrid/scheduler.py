@@ -421,10 +421,12 @@ class ReceptionScheduler:
         # 2.9.2 — filtre des stations texte (désactivées ou en sommeil) : callable(item) -> bool
         self.station_filter = None
 
-    # 2.11.0 — contrôles espacés quand ils ne trouvent rien : 8, 16 puis 32 min. Le 20/11, de 08:43 à
-    # 10:45, un contrôle toutes les 8 min (trois changements de fréquence et un profil radio complet chacun)
-    # n'a jamais trouvé de carte.
-    RECHECK_MAX_STEPS = 2
+    # 2.11.0 — contrôles espacés quand ils ne trouvent rien : 8 puis 16 min.
+    # 2.11.3 — RECHECK_MAX_STEPS réduit de 2 à 1 : avec 2 étapes le backoff atteignait 32 min, bloquant
+    # toutes les cartes DWD (08:42, 08:54, 09:00, 09:06) quand le streak montait à 2 après deux scans sans
+    # résultat. 16 min max est un compromis raisonnable : on évite les allers-retours incessants tout en
+    # gardant une réactivité correcte sur les fréquences DWD.
+    RECHECK_MAX_STEPS = 1
 
     def recheck_interval(self):
         return self.WEFAX_SILENCE_RECHECK_S * (2 ** min(int(getattr(self, "recheck_streak", 0)), self.RECHECK_MAX_STEPS))
@@ -656,6 +658,10 @@ class ReceptionScheduler:
                     )
             if self.veille_due(st, mono_now):
                 return Decision("VEILLE", "Veille de propagation (temps mort entre deux cartes)")
+            # 2.11.3 — le streak est remis à 0 dès qu'une carte a été tracée depuis la dernière remontée
+            # (seconds_since_chart < WEFAX_SILENCE_RECHECK_S). En 2.11.0, le streak grimpait jusqu'à 2 même
+            # quand une carte arrivait entre deux RECHECK, parce que la remise à 0 ne s'appliquait que si
+            # la carte était très récente.
             if st.seconds_since_chart < self.WEFAX_SILENCE_RECHECK_S:
                 self.recheck_streak = 0
             interval = self.recheck_interval()

@@ -1162,11 +1162,16 @@ class HybridModeArbiter:
 
         now = datetime.now(timezone.utc)
         mono = time.monotonic()
+        # 2.11.3 — grâce de 10 lignes : si rx_image_armed n'est pas encore levé mais que 10 lignes sont
+        # déjà tracées, l'arbiter considère la carte comme en cours. Sans cette grâce, un retour du RTTY
+        # juste après un START DWD manqué (image_evidence pas encore accumulé 8 lignes) permettait un
+        # nouveau WEFAX_RECHECK qui interrompait la carte naissante.
+        _rx_line = int(getattr(self.app, "rx_current_line", 0))
         chart_drawing = bool(
             self.active_pipeline == "WEFAX"
-            and int(getattr(self.app, "rx_current_line", 0)) >= 3
+            and _rx_line >= 3
             and not getattr(self.app, "waiting_after_stop", False)
-            and getattr(self.app, "rx_image_armed", False)
+            and (getattr(self.app, "rx_image_armed", False) or _rx_line >= 10)
         )
         if chart_drawing:
             self.last_chart_mono = mono
@@ -1191,6 +1196,18 @@ class HybridModeArbiter:
         quiet_gap = (
             bool(getattr(self.app, "waiting_after_stop", False)) or (mono - self.last_chart_mono) >= 300
         )
+        # 2.11.3 — avant de lancer la veille initiale, vérifier qu'aucune carte n'est imminente :
+        # le 25/11, le scan de démarrage a coïncidé avec le créneau DWD de 08:42, déplaçant la radio
+        # juste au moment du START → carte non détectée malgré S9+15 dB.
+        _survey_chart_soon = False
+        if self.startup_survey_pending and self.plan["rtty_enabled"]:
+            from wefax_station.core.schedules import chart_slots_around
+
+            _sched = getattr(self.app, "schedule_data", None) or {}
+            _fam_st = get_wefax_station_by_freq(float(getattr(self.app.radio, "actual_freq_khz", 0.0)))
+            _fam = (_fam_st or {}).get("family", "DWD")
+            _slots = _sched.get(_fam, [])
+            _survey_chart_soon = bool(chart_slots_around(_slots, now, before_s=600, after_s=self.scheduler.RECHECK_AFTER_START_S))
         if (
             self.startup_survey_pending
             and self.active_pipeline == "WEFAX"
@@ -1198,6 +1215,7 @@ class HybridModeArbiter:
             and self.plan["rtty_enabled"]
             and (tier_here < 3 or quiet_gap)
             and mono - getattr(self.app, "last_scan_request", 0.0) > 15
+            and not _survey_chart_soon
         ):
             self.startup_survey_pending = False
             ids = self.program_station_ids(programs=(1, 2))

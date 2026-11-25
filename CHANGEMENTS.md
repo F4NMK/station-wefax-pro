@@ -1,3 +1,48 @@
+# Version 2.11.3 (25/11/2026) — correctif : cartes DWD non reçues malgré signal fort (régressions 2.11.x)
+
+## Constaté sur la station (25/11/2026, signal S9+15 dB, qualité 79 %)
+* Aucune carte DWD reçue entre 08:34 et 09:34 alors que le signal DDK3 était à S9+15 dB.
+* Diagnostic : trois régressions introduites en 2.11.0 cumulaient leurs effets sur la fenêtre 08:42–09:06.
+
+### Régression #1 — Backoff exponentiel trop agressif (`hybrid/scheduler.py`, 2.11.0)
+* `RECHECK_MAX_STEPS = 2` → intervalle de recheck pouvait atteindre **32 min** (8×2×2) après 2 scans sans
+  carte. Pendant cette fenêtre de 32 min, le scheduler retournait `STAY` sans émettre de décision WEFAX :
+  les créneaux 08:42, 08:54, 09:00, 09:06 tombaient tous dans cette fenêtre silencieuse.
+
+### Régression #2 — Veille initiale au démarrage déplaçant la radio (`hybrid/arbiter.py`, 2.11.0)
+* `startup_survey_pending` déclenchait un scan RTTY (~1 min) dès que le poste était libre, sans vérifier si
+  une carte DWD était imminente. Si un créneau DWD tombait pendant le scan, le START n'était pas vu.
+
+### Régression #3 — `chart_drawing` jamais True si retour du RTTY juste après un START (`hybrid/arbiter.py`)
+* La condition `rx_image_armed` dans `chart_drawing` nécessitait 8 lignes d'`image_evidence` pour se lever.
+  Un retour du RTTY dans les 4 s suivant un START pouvait déclencher un nouveau WEFAX_RECHECK avant que
+  `rx_image_armed` soit True, interrompant la carte naissante.
+
+## Corrections
+* **`RECHECK_MAX_STEPS = 1`** (`hybrid/scheduler.py`) : backoff max ramené à 16 min (8×2). Un seul
+  palier supplémentaire est raisonnable ; 32 min causait des pertes sur les émissions cadencées à 12 min.
+* **Veille initiale protégée** (`hybrid/arbiter.py`) : `startup_survey_pending` ne déclenche plus le scan
+  RTTY si une carte de la famille courante est prévue dans les 10 prochaines minutes.
+* **Grâce de 10 lignes** (`hybrid/arbiter.py`) : `chart_drawing` est True dès 10 lignes tracées même si
+  `rx_image_armed` n'est pas encore levé, évitant qu'un recheck interrompe une carte naissante.
+
+## Vérifié / non vérifié
+* Les 3 corrections ne touchent pas au décodage DSP (`dsp/`, `radio/`), ni au CI-V ; le garde-fou
+  des commandes 1C et 17 est intact.
+* Autotests 237/237 ✓ (aucun test ne couvrait ces trois scénarios de timing → à ajouter).
+* **Non vérifié en direct** (simulateur uniquement) — à valider par F4NMK sur la prochaine fenêtre DWD.
+
+---
+
+# Version 2.11.2 (25/11/2026) — corrections interface
+
+## Corrections
+* Flèche sous-menu masquée : `_remove_toolbar_dropdowns` limité au cadre `map_toolbar_frame`.
+* Bouton orange sous le tableau de bord : `grid_remove()` sur les boutons hérités du cadre `band`.
+* `btn_stations` rebranché sur `btn_freqs_cockpit` pour l'indicateur visuel du choix opérateur.
+
+---
+
 # Version 2.11.1 (25/11/2026) — correctif : automatisme figé après un choix au bouton « Stations »
 
 ## Constaté sur la station (journal de la nuit du 24 au 25/11, lecture seule)
