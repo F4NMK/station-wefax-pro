@@ -1,0 +1,4 @@
+{
+  "_aide": "Statut des modules du paquet wefax_station. Utiliser : python outils/module_guard.py validate <module> \"note\"",
+  "modules": {}
+}

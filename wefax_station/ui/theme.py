@@ -1,0 +1,20 @@
+"""Thème visuel d'instrumentation radio."""
+
+
+class UITheme:
+    BG_ROOT = "#131922"
+    BG_PANEL = "#1b2430"
+    BG_SURFACE = "#232f3e"
+    BG_CANVAS = "#0d131a"
+    BORDER = "#2e3d4f"
+    BORDER_ACTIVE = "#3b82f6"
+    TEXT_PRIMARY = "#e6edf3"
+    TEXT_MUTED = "#9fb0c2"
+    ACCENT = "#2563eb"
+    ACCENT_HOVER = "#1d4ed8"
+    OK_BG = "#15803d"
+    OK_FG = "#dcfce7"
+    WARN_BG = "#b45309"
+    WARN_FG = "#fef3c7"
+    ERR_BG = "#b91c1c"
+    ERR_FG = "#fee2e2"
