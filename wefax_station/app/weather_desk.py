@@ -14,6 +14,7 @@ from PIL import Image
 from wefax_station.core.bulletin_text import build_bulletin
 from wefax_station.core.web_charts import WEB_WEATHER_CHARTS
 from wefax_station.storage.atomic import atomic_json
+from wefax_station.ui.placement import show_over_root
 from wefax_station.version import SOFTWARE_TITLE, SOFTWARE_VERSION
 from wefax_station.weather.geometry import geostrophic_estimate, local_line_axis
 
@@ -31,7 +32,8 @@ class WeatherDeskMixin:
     def _weather_window(self):
         win = tk.Toplevel(self.root)
         win.title(f"Analyse physique assistée — {SOFTWARE_TITLE}")
-        self._fit_window(win, 700, 700)
+        win.geometry("700x700")
+        show_over_root(win, self.root)
         container = tk.Canvas(win, highlightthickness=0)
         scroll = ttk.Scrollbar(win, orient="vertical", command=container.yview)
         container.configure(yscrollcommand=scroll.set)
@@ -212,7 +214,7 @@ class WeatherDeskMixin:
         a = meta.get("annotations", {})
         win = tk.Toplevel(self.root)
         win.title("Lecture et hypothèses confirmées — " + Path(p).name)
-        win.geometry("830x780")
+        show_over_root(win, self.root)
         grid = tk.Frame(win, padx=12, pady=10)
         grid.pack(fill="both", expand=True)
         variables = {}

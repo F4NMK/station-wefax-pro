@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import ttk
 from wefax_station.ui.help_content import HELP_TOPICS_25, help_plain25
 from wefax_station.ui.help_tip import DetailedHelpTip25
+from wefax_station.ui.placement import show_over_root
 from wefax_station.ui.theme import UITheme
 from wefax_station.version import SOFTWARE_BRAND
 
@@ -128,7 +129,8 @@ class HelpMixin:
         win = self.help_window25 = tk.Toplevel(self.root)
         win.title(f"Aide — {SOFTWARE_BRAND}")
         win.configure(bg=UITheme.BG_ROOT)
-        self._fit_window(win, 980, 700)
+        win.geometry("980x700")
+        show_over_root(win, self.root)
         top = tk.Frame(win, bg=UITheme.BG_PANEL, padx=10, pady=8)
         top.pack(fill="x")
         tk.Label(

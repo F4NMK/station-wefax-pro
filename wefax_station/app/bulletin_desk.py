@@ -23,6 +23,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from wefax_station.core.bulletin_text import build_bulletin
+from wefax_station.ui.placement import show_over_root
 from wefax_station.ui.theme import UITheme
 from wefax_station.version import SOFTWARE_TITLE
 from wefax_station.weather.plain_language import clean_raw
@@ -104,7 +105,8 @@ class BulletinDeskMixin:
         win = tk.Toplevel(self.root)
         win.title(f"Météo & bulletin — {SOFTWARE_TITLE}")
         win.configure(bg=UITheme.BG_PANEL)
-        self._fit_window(win, 1000, 720)
+        win.geometry("1000x720")
+        show_over_root(win, self.root)
         win.minsize(680, 460)
         self._desk_win = win
         nb = ttk.Notebook(win)

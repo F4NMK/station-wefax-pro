@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox
 import numpy as np
 from PIL import Image, ImageTk
 from wefax_station.storage.atomic import atomic_json, atomic_png
+from wefax_station.ui.placement import show_over_root
 
 
 class ImageToolsMixin:
@@ -123,7 +124,7 @@ class ImageToolsMixin:
             original = self.raw_wefax_img[: self.rx_current_line or len(self.raw_wefax_img)].copy()
         win = tk.Toplevel(self.root)
         win.title("Marge / slant / orientation — copie non destructive")
-        win.geometry("900x730")
+        show_over_root(win, self.root)
         controls = tk.Frame(win)
         controls.pack(fill="x", padx=12, pady=8)
         margin = tk.IntVar(value=0)

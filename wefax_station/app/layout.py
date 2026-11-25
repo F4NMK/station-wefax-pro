@@ -4,6 +4,7 @@ import sys
 import tkinter as tk
 from tkinter import ttk
 from wefax_station.core.schedules import WEFAX_STAGES
+from wefax_station.ui.placement import show_over_root
 from wefax_station.ui.theme import UITheme
 from wefax_station.ui.widgets import SegmentedRadioGroup, SwitchCheckButton
 from wefax_station.version import SOFTWARE_TITLE
@@ -763,45 +764,25 @@ class LayoutMixin:
 
     # ---------------------------------------------------- fenêtres annexes
     def _fit_window(self, window, width, height):
-        """2.13.0 — Positionner la fenêtre sur le même moniteur que la fenêtre principale.
+        """2.14.0 — Positionner la fenêtre sur l'écran de la fenêtre principale.
 
-        Sur un bureau étendu (plusieurs écrans), winfo_screenwidth() / winfo_screenheight()
-        retournent la taille totale du bureau virtuel : la fenêtre peut déborder ou apparaître
-        sur un autre écran. On centre ici la popup sur la fenêtre principale (self.root).
+        Délègue à ui.placement.show_over_root qui connaît le rectangle exact de self.root
+        et ramène la popup dans ses bornes, même sur un bureau multi-moniteurs.
+        La taille demandée (width × height) est appliquée avant le placement.
+        L'opérateur peut ensuite déplacer la fenêtre sur un autre écran à sa convenance.
         """
-        window.update_idletasks()
-        try:
-            rx = self.root.winfo_x()
-            ry = self.root.winfo_y()
-            rw = self.root.winfo_width()
-            rh = self.root.winfo_height()
-        except Exception:
-            rx, ry, rw, rh = 0, 0, 0, 0
-        sw = window.winfo_screenwidth()
-        sh = window.winfo_screenheight()
-        w = max(400, min(width, sw - 60))
-        h = max(300, min(height, sh - 60))
-        if rw > 0 and rh > 0:
-            cx = rx + (rw - w) // 2
-            cy = ry + (rh - h) // 2
-        else:
-            cx = (sw - w) // 2
-            cy = (sh - h) // 2
-        cx = max(0, min(cx, sw - w))
-        cy = max(0, min(cy, sh - h - 40))
-        window.geometry(f"{w}x{h}+{cx}+{cy}")
+        window.geometry(f"{max(400, width)}x{max(300, height)}")
+        show_over_root(window, self.root)
 
     def _show_settings(self, tab="RADIO"):
         self._select_navigation_tab(tab)
-        self._fit_window(self.settings_window, 860, 720)
-        self.settings_window.deiconify()
-        self.settings_window.lift()
+        self.settings_window.geometry("860x720")
+        show_over_root(self.settings_window, self.root)
         self._style_widget_tree25(self.settings_window)
         self._select_navigation_tab(tab)
         self._install_help(self.settings_window)
 
     def _show_diagnostics(self):
-        self._fit_window(self.diagnostics_window, 760, 500)
-        self.diagnostics_window.deiconify()
-        self.diagnostics_window.lift()
+        self.diagnostics_window.geometry("760x500")
+        show_over_root(self.diagnostics_window, self.root)
         self._style_widget_tree25(self.diagnostics_window)

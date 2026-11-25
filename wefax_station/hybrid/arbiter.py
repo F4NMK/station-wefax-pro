@@ -1375,6 +1375,7 @@ class HybridModeArbiter:
                 cur = f"Carte WEFAX en cours ({lines} lignes)"
             else:
                 # 2.12.0 — afficher la prochaine carte avec compte à rebours
+                # 2.14.0 — ajouter la station sur laquelle elle est attendue
                 try:
                     delay_sec, code, desc, when_str, fam, _elapsed = self.get_next_wefax_countdown()
                     if delay_sec is not None and delay_sec >= 0:
@@ -1385,9 +1386,20 @@ class HybridModeArbiter:
                             countdown = "dans 1 min"
                         else:
                             countdown = f"dans {mins} min"
-                        # Tronquer la description si trop longue pour la barre
-                        short_desc = desc if len(desc) <= 55 else desc[:52] + "…"
-                        cur = f"⏱ {short_desc} [{code}] · {countdown}"
+                        short_desc = desc if len(desc) <= 50 else desc[:47] + "…"
+                        # Station en cours d'écoute (id + fréquence)
+                        st_id = getattr(getattr(self, "app", None), "radio", None)
+                        st_id = getattr(st_id, "active_station_id", None) if st_id else None
+                        st_id = st_id or fam or ""
+                        actual_khz = getattr(getattr(self, "app", None), "radio", None)
+                        actual_khz = getattr(actual_khz, "actual_freq_khz", None) if actual_khz else None
+                        if actual_khz and st_id and st_id not in ("MANUEL",):
+                            station_part = f" · {st_id} {actual_khz / 1000:.3f} MHz"
+                        elif st_id and st_id not in ("MANUEL",):
+                            station_part = f" · {st_id}"
+                        else:
+                            station_part = ""
+                        cur = f"⏱ {short_desc} [{code}]{station_part} · {countdown}"
                     else:
                         cur = "WEFAX : attente de la carte suivante"
                 except Exception:
@@ -1450,8 +1462,18 @@ class HybridModeArbiter:
         if self.requested_mode != "BULLETINS":
             fam = self.upcoming_wefax_family()
             slots = (getattr(self.app, "schedule_data", None) or {}).get(fam, [])
+            # 2.14.0 — préciser la station attendue pour chaque carte à venir
+            # Priorité : station meilleure dans la table de propagation ; sinon station JOUR/NUIT de la famille
+            from wefax_station.core.stations import get_wefax_stations_by_family, primary_station_id  # noqa: PLC0415
+            prop = getattr(self, "prop", None)
+            if prop is not None and fam:
+                ids = [s["id"] for s in get_wefax_stations_by_family(fam)]
+                best_st = prop.best(ids, max_age_s=3600) or primary_station_id(fam)
+            else:
+                best_st = primary_station_id(fam) if fam else ""
+            st_suffix = f" [{best_st}]" if best_st else ""
             for t, code, desc in upcoming_charts(slots, now, horizon_min=240, n=3):
-                ev.append((t, 0, f"{t:%H:%M} {chart_short_label(code, desc)}"))
+                ev.append((t, 0, f"{t:%H:%M} {chart_short_label(code, desc)}{st_suffix}"))
         ev.sort(key=lambda e: (e[0], e[1]))
         return [txt for _, _, txt in ev[:n]]
 

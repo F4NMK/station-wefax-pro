@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageTk
 from wefax_station.core.stations import is_rtty_frequency
 from wefax_station.storage.atomic import atomic_png
 from wefax_station.ui.logo import default_app_logo
+from wefax_station.ui.placement import show_over_root
 from wefax_station.version import SOFTWARE_BRAND, SOFTWARE_TITLE
 
 
@@ -155,7 +156,7 @@ class ArchivesMixin:
     def _history_window(self):
         win = tk.Toplevel(self.root)
         win.title("Historique des cartes")
-        win.geometry("1000x480")
+        show_over_root(win, self.root)
         tree = ttk.Treeview(win, columns=("name", "size"), show="headings")
         tree.heading("name", text="Carte (double-clic pour consulter)")
         tree.heading("size", text="Ko")

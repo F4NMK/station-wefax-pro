@@ -17,6 +17,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from wefax_station.weather import grib as grib_mod
 from wefax_station.winlink import express as wlx
+from wefax_station.ui.placement import show_over_root
 from wefax_station.winlink import saildocs
 
 BG = "#0f172a"
@@ -357,10 +358,8 @@ class WinlinkDeskMixin:
         win = tk.Toplevel(self.root)
         win.title("Winlink par VARA HF — assistant")
         win.configure(bg=BG)
-        try:
-            self._fit_window(win, 920, 800)
-        except Exception:
-            win.geometry("920x800")
+        win.geometry("920x800")
+        show_over_root(win, self.root)
         win.minsize(780, 640)
         self._wl_win = win
 

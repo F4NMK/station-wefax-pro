@@ -130,3 +130,19 @@ def get_wefax_station_by_freq(freq_khz: float) -> dict:
         if abs(float(freq_khz) - s["freq"]) < 0.8:
             return s
     return None
+
+
+def get_wefax_stations_by_family(family: str) -> list:
+    """Retourne la liste des stations WEFAX d'une famille donnée (ex. "DWD", "GYA", "ATH")."""
+    return [s for s in WEFAX_STATIONS if s.get("family") == str(family)]
+
+
+def primary_station_id(family: str) -> str:
+    """Retourne l'identifiant de la station principale d'une famille (JOUR/NUIT en priorité, sinon première)."""
+    stations = get_wefax_stations_by_family(family)
+    if not stations:
+        return family
+    for s in stations:
+        if "JOUR/NUIT" in s.get("period", ""):
+            return s["id"]
+    return stations[0]["id"]

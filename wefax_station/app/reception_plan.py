@@ -15,6 +15,7 @@ from tkinter import messagebox, ttk
 
 from wefax_station.core.stations import RTTY_WEATHER_STATIONS, WEFAX_STATIONS
 from wefax_station.hybrid.scheduler import CATEGORIES, PROGRAM_LABEL, PROGRAM_STATIONS, RttyItem
+from wefax_station.ui.placement import show_over_root
 from wefax_station.ui.theme import UITheme
 
 _COLUMNS = (
@@ -148,7 +149,7 @@ class ReceptionPlanMixin:
         hold = getattr(arb, "operator_choice", None) if arb is not None else None
         try:
             if hold:
-                btn.configure(text=f"Stations — choix {hold['station']}", bg="#b45309", fg="white")
+                btn.configure(text=f"🔒 {hold['station']} (forcé par opérateur)", bg="#b45309", fg="white")
             else:
                 btn.configure(text="Stations", bg=getattr(self, "_btn_stations_bg", "SystemButtonFace"), fg="black")
         except Exception:
@@ -266,6 +267,7 @@ class ReceptionPlanMixin:
         win.title("Résultats du dernier scan — choix de la fréquence")
         win.configure(bg=UITheme.BG_PANEL)
         win.geometry("1330x500")
+        show_over_root(win, self.root)
         win.minsize(640, 300)
         self._scan_results_win = win
         tk.Label(
