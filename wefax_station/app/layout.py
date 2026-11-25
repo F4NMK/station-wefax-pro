@@ -763,9 +763,33 @@ class LayoutMixin:
 
     # ---------------------------------------------------- fenêtres annexes
     def _fit_window(self, window, width, height):
+        """2.13.0 — Positionner la fenêtre sur le même moniteur que la fenêtre principale.
+
+        Sur un bureau étendu (plusieurs écrans), winfo_screenwidth() / winfo_screenheight()
+        retournent la taille totale du bureau virtuel : la fenêtre peut déborder ou apparaître
+        sur un autre écran. On centre ici la popup sur la fenêtre principale (self.root).
+        """
+        window.update_idletasks()
+        try:
+            rx = self.root.winfo_x()
+            ry = self.root.winfo_y()
+            rw = self.root.winfo_width()
+            rh = self.root.winfo_height()
+        except Exception:
+            rx, ry, rw, rh = 0, 0, 0, 0
         sw = window.winfo_screenwidth()
         sh = window.winfo_screenheight()
-        window.geometry(f"{max(400,min(width,sw-50))}x{max(300,min(height,sh-100))}")
+        w = max(400, min(width, sw - 60))
+        h = max(300, min(height, sh - 60))
+        if rw > 0 and rh > 0:
+            cx = rx + (rw - w) // 2
+            cy = ry + (rh - h) // 2
+        else:
+            cx = (sw - w) // 2
+            cy = (sh - h) // 2
+        cx = max(0, min(cx, sw - w))
+        cy = max(0, min(cy, sh - h - 40))
+        window.geometry(f"{w}x{h}+{cx}+{cy}")
 
     def _show_settings(self, tab="RADIO"):
         self._select_navigation_tab(tab)

@@ -9,7 +9,7 @@ HELP_TOPICS_25 = {
     ),
     "interface": (
         "Interface, fenêtres et raccourcis",
-        "L'écran principal regroupe sur un seul bandeau compact à 3 colonnes : la télémétrie RF, le centre de contrôle du récepteur HF (état, horaires UTC et commandes Cartes/Réception/Affichage) et le spectre BF, afin de laisser une place maximale à la carte météo.\nRéglages ouvre Radio / Image / Bulletin. Diagnostics conserve les informations techniques et le journal.\nF1 ouvre la rubrique du contrôle qui a le focus ; à défaut, celle sous le pointeur.\nVoir [[affichage|Zoom et modes d'image]] et [[diagnostic|Résolution des difficultés]].",
+        "L'écran principal regroupe sur un seul bandeau compact à 3 colonnes : la télémétrie RF, le centre de contrôle du récepteur HF (état, horaires UTC et commandes Cartes/Réception/Affichage) et le spectre BF, afin de laisser une place maximale à la carte météo.\nRéglages ouvre Radio / Image / Bulletin. Diagnostics conserve les informations techniques et le journal.\nF1 ouvre la rubrique du contrôle qui a le focus ; à défaut, celle sous le pointeur.\nBouton ⟳ Auto : apparaît en orange dans la barre supérieure dès que les automatismes sont suspendus (mode MANUEL, RELECTURE ou hold manuel). Un clic restitue immédiatement le contrôle automatique (passage en mode HYBRIDE). Le bouton disparaît quand l'automatique est actif.\nVoir [[affichage|Zoom et modes d'image]], [[stations|Bouton Stations (choix manuel)]] et [[diagnostic|Résolution des difficultés]].",
     ),
     "audio": (
         "Audio USB : choix et diagnostic",
@@ -37,7 +37,7 @@ HELP_TOPICS_25 = {
     ),
     "programmes": (
         "Horaires UTC et prochaine carte",
-        "Les programmes intégrés viennent des documents officiels : DWD d'après la NOAA (information du 24/07/2024, plan DWD 10/2020), Northwood d'après la NOAA (information du 05/01/2022, une carte toutes les 12 min), Athènes 08:45-10:45 UTC (réception au Cannet à confirmer). Toujours confirmer le type, la date et la validité sur le cartouche effectivement reçu ; le DWD diffuse lui-même son programme à 14:25 et 14:45 UTC.\nLa ligne « Ensuite » mêle les prochaines cartes et les prochains bulletins, dans l'ordre des heures.\nProgramme observé : chaque START reçu est rattaché à l'heure du programme ; un créneau où le poste écoutait la station avec un bon signal sans recevoir de START est noté « muet » (ligne [PROGRAMME OBSERVÉ] au journal). Muet au moins 3 jours et jamais reçu, il est signalé « à vérifier » dans la fenêtre des sources officielles ; rien n'est retiré du programme sans vous.\nVoir [[sources|Mise à jour par les sources officielles]], [[horsligne|Fonctionnement sans Internet]] et [[priorites|Priorités]].",
+        "Les programmes intégrés viennent des documents officiels : DWD d'après la NOAA (information du 24/07/2024, plan DWD 10/2020), Northwood d'après la NOAA (information du 05/01/2022, une carte toutes les 12 min), Athènes 08:45-10:45 UTC (réception au Cannet à confirmer). Toujours confirmer le type, la date et la validité sur le cartouche effectivement reçu ; le DWD diffuse lui-même son programme à 14:25 et 14:45 UTC.\nLa ligne « Ensuite » mêle les prochaines cartes et les prochains bulletins, dans l'ordre des heures.\nCompte à rebours dans la barre d'état : entre deux cartes, au lieu d'un message générique, la barre affiche directement le nom abrégé de la prochaine carte et le temps restant, par exemple « ⏱ Analyse de surface Atlantique Nord / Europe [ASXX] · dans 7 min ». Quand le délai est inférieur à 1 min, « imminente » s'affiche. Cet affichage se rafraîchit avec l'état du décodeur.\nProgramme observé : chaque START reçu est rattaché à l'heure du programme ; un créneau où le poste écoutait la station avec un bon signal sans recevoir de START est noté « muet » (ligne [PROGRAMME OBSERVÉ] au journal). Muet au moins 3 jours et jamais reçu, il est signalé « à vérifier » dans la fenêtre des sources officielles ; rien n'est retiré du programme sans vous.\nVoir [[sources|Mise à jour par les sources officielles]], [[horsligne|Fonctionnement sans Internet]] et [[priorites|Priorités]].",
     ),
     "apt": (
         "START, STOP, attente et reprise en cours",
@@ -77,7 +77,7 @@ HELP_TOPICS_25 = {
     ),
     "diagnostic": (
         "Diagnostic par symptôme",
-        "Aucune courbe : vérifier [[audio|l'entrée audio]].\nCAT sans réponse : vérifier [[cat|le port, le débit et l'adresse]].\nMarge automatique refusée : utiliser [[geometrie|la correction manuelle non destructive]].",
+        "Aucune courbe : vérifier [[audio|l'entrée audio]].\nCAT sans réponse : vérifier [[cat|le port, le débit et l'adresse]].\nMarge automatique refusée : utiliser [[geometrie|la correction manuelle non destructive]].\nCâble USB débranché/rebranché : la connexion CAT est rétablie automatiquement dès que la signature du port change (détection toutes les 5 s). Le port fantôme est fermé proprement avant la reconnexion. Si la reconnexion échoue, vérifier qu'aucun autre logiciel n'a pris le port en charge pendant le débranchement.",
     ),
     "sources": (
         "Mise à jour des programmes par les sources officielles",
@@ -117,7 +117,7 @@ HELP_TOPICS_25 = {
     ),
     "stations": (
         "Bouton Stations (choix manuel)",
-        "Le bouton Stations de l'écran principal ouvre la liste de toutes les stations (WEFAX, RTTY, NAVTEX) avec leur dernière qualité mesurée. Double-clic ou « Accorder sur la sélection » : le poste passe sur la station choisie sans nouveau scan.\nUn choix WEFAX est GARDÉ jusqu'à la fin de la carte suivante (ou 45 min sans carte) : l'automatisme ne change plus de fréquence pendant ce temps et le bouton devient orange (« Stations — choix DDK3 »). « Rendre la main à l'automatique » reprend tout de suite le fonctionnement normal.\nUtile quand le scan automatique se trompe (propagation changeante, station brouillée).",
+        "Le bouton Stations de l'écran principal ouvre la liste de toutes les stations (WEFAX, RTTY, NAVTEX) avec leur dernière qualité mesurée. Double-clic ou « Accorder sur la sélection » : le poste passe sur la station choisie sans nouveau scan.\nUn choix WEFAX est GARDÉ jusqu'à la fin de la carte suivante (ou 45 min sans carte) : l'automatisme ne change plus de fréquence pendant ce temps et le libellé du bouton devient orange (« Stations — choix DDK3 »). Le bouton « Rendre la main à l'automatique » dans la fenêtre Stations reprend tout de suite le fonctionnement normal.\nBouton ⟳ Auto dans la barre supérieure : distinct du bouton Stations, il s'affiche en orange dès que le contrôle automatique est suspendu, quelle qu'en soit la cause (choix de station, bascule en mode MANUEL ou RELECTURE, hold manuel). Un seul clic relance immédiatement les automatismes. Il disparaît dès que l'automatique reprend la main.\nUtile quand le scan automatique se trompe (propagation changeante, station brouillée).",
     ),
 }
 

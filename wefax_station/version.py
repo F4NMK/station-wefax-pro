@@ -5,7 +5,7 @@ from pathlib import Path
 # ==============================================================================
 # RÉFÉRENCE UNIQUE DE VERSION LOGICIELLE (SOURCE DE VÉRITÉ GLOBALE)
 # ==============================================================================
-SOFTWARE_VERSION = "2.12.0"
+SOFTWARE_VERSION = "2.13.0"
 SOFTWARE_TITLE = f"Station WEFAX Pro {SOFTWARE_VERSION}"
 SOFTWARE_BRAND = f"Station WEFAX PRO {SOFTWARE_VERSION} · F4NMK / Marc"
 # Anciennes constantes conservées (même valeur effective que dans la version monolithique).
