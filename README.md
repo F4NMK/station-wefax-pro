@@ -1,4 +1,4 @@
-# Station WEFAX Pro 2.11.0 — F4NMK / ADRASEC
+# Station WEFAX Pro 2.11.x
 
 Décodeur WEFAX 120 RPM piloté en CI-V (IC-705), réception RTTY/NAVTEX, archives et bulletin.
 Cette version est **modulaire** : il n'y a plus de fragments à réassembler ni de script de construction.
