@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Controls
 import "../components" as C
 import ".." as T
 
@@ -119,45 +118,18 @@ Rectangle {
             Column {
                 spacing: T.Theme.spacing
 
-                Button {
-                    text: "Connecter IC-705"
+                C.FlatButton {
+                    text:    "Connecter IC-705"
                     enabled: !root.connected
+                    accent:  true
                     onClicked: radio.connect("COM14", 19200)
-
-                    background: Rectangle {
-                        color: parent.enabled ? (parent.hovered ? T.Theme.accentHover : T.Theme.accent) : T.Theme.bgSurface
-                        radius: T.Theme.radiusSm
-                        Behavior on color { ColorAnimation { duration: 120 } }
-                    }
-                    contentItem: Text {
-                        text: parent.text
-                        color: T.Theme.textPrimary
-                        font.family: T.Theme.fontUi
-                        font.pixelSize: T.Theme.fontSizeSm
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment:   Text.AlignVCenter
-                    }
                 }
 
-                Button {
-                    text: "Déconnecter"
+                C.FlatButton {
+                    text:    "Déconnecter"
                     enabled: root.connected
+                    accent:  false
                     onClicked: radio.disconnect()
-
-                    background: Rectangle {
-                        color: parent.enabled ? (parent.hovered ? Qt.lighter(T.Theme.border, 1.3) : T.Theme.bgSurface) : T.Theme.bgPanel
-                        radius: T.Theme.radiusSm
-                        border.color: T.Theme.border
-                        Behavior on color { ColorAnimation { duration: 120 } }
-                    }
-                    contentItem: Text {
-                        text: parent.text
-                        color: T.Theme.textMuted
-                        font.family: T.Theme.fontUi
-                        font.pixelSize: T.Theme.fontSizeSm
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment:   Text.AlignVCenter
-                    }
                 }
             }
         }

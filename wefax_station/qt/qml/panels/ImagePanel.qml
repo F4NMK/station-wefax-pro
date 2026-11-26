@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Controls
 import "../components" as C
 import ".." as T
 
@@ -147,25 +146,24 @@ Rectangle {
                     font.letterSpacing: 1
                 }
 
-                ProgressBar {
+                // Barre de progression maison (évite le warning de style natif)
+                Item {
                     id: progressBar
                     Layout.fillWidth: true
-                    value: 0.0
-                    from: 0; to: 1
+                    height: 8
+                    property real value: 0.0
 
-                    background: Rectangle {
-                        color: T.Theme.bgCanvas
+                    Rectangle {
+                        anchors.fill: parent
+                        color:  T.Theme.bgCanvas
                         radius: 2
-                        implicitHeight: 8
                     }
-                    contentItem: Item {
-                        implicitHeight: 8
-                        Rectangle {
-                            width: progressBar.visualPosition * parent.width
-                            height: parent.height
-                            radius: 2
-                            color: T.Theme.accent
-                        }
+                    Rectangle {
+                        width:  parent.value * parent.width
+                        height: parent.height
+                        radius: 2
+                        color:  T.Theme.accent
+                        Behavior on width { NumberAnimation { duration: 80 } }
                     }
                 }
 

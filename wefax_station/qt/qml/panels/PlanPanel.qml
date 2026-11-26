@@ -45,23 +45,10 @@ Rectangle {
 
             Item { Layout.fillWidth: true }
 
-            Button {
-                text: "Actualiser"
+            C.FlatButton {
+                text:   "Actualiser"
+                accent: true
                 onClicked: appBridge.requestScheduleRefresh()
-
-                background: Rectangle {
-                    color: parent.hovered ? T.Theme.accentHover : T.Theme.accent
-                    radius: T.Theme.radiusSm
-                    Behavior on color { ColorAnimation { duration: 120 } }
-                }
-                contentItem: Text {
-                    text: parent.text
-                    color: T.Theme.textPrimary
-                    font.family: T.Theme.fontUi
-                    font.pixelSize: T.Theme.fontSizeSm
-                    horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment:   Text.AlignVCenter
-                }
             }
         }
 
