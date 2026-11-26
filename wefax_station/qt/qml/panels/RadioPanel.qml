@@ -18,7 +18,7 @@ Rectangle {
     property real   freq:       0.0
     property string radioMode:  "---"
     property bool   connected:  false
-    property real   smeter:     0.0
+    property real   smeter:     0.0   // 0.0 = silence, 1.0 = S9+60
 
     Connections {
         target: radio

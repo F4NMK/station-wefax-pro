@@ -40,8 +40,8 @@ Item {
                 Repeater {
                     model: 12
                     delegate: Rectangle {
-                        readonly property real segThreshold: (index + 1) / 12.0
-                        readonly property bool lit: root.level >= segThreshold - (1/12.0 * 0.5)
+                        // segment i allumé si level dépasse i/12
+                        readonly property bool lit: root.level > (index / 12.0)
 
                         // S1–S5 vert, S6–S9 orange, +xx rouge
                         readonly property color segColor: {
