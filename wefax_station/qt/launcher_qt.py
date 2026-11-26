@@ -48,13 +48,13 @@ def main() -> int:
     app_qt.setOrganizationDomain("f4nmk.radio")
 
     # ── Instanciation des ponts ──────────────────────────────────────────
-    from wefax_station.qt.bridge.radio_bridge import RadioBridge
-    from wefax_station.qt.bridge.dsp_bridge   import DspBridge
-    from wefax_station.qt.bridge.app_bridge   import AppBridge
+    # AppBridge crée RadioBridge et DspBridge en interne ;
+    # on récupère les instances pour les exposer séparément au QML.
+    from wefax_station.qt.bridge.app_bridge import AppBridge
 
-    radio_bridge = RadioBridge()
-    dsp_bridge   = DspBridge()
-    app_bridge   = AppBridge(radio_bridge=radio_bridge, dsp_bridge=dsp_bridge)
+    app_bridge   = AppBridge()
+    radio_bridge = app_bridge.radio
+    dsp_bridge   = app_bridge.dsp
 
     # ── Moteur QML ───────────────────────────────────────────────────────
     engine = QQmlApplicationEngine()

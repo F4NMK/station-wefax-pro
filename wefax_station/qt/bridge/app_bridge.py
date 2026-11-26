@@ -20,10 +20,17 @@ from PyQt6.QtCore import (
 
 from wefax_station.qt.bridge.radio_bridge import RadioBridge
 from wefax_station.qt.bridge.dsp_bridge import DspBridge
-from wefax_station.hybrid.arbiter import HybridModeArbiter
-from wefax_station.hybrid.planner import ScheduleSyncAndPlanner
-from wefax_station.storage.portable import PortableWorkspaceManager
-from wefax_station.version import SOFTWARE_VERSION
+
+# Imports métier chargés en lazy dans initialize() pour éviter
+# que l'import du module lui-même plante si Tkinter manque.
+# from wefax_station.hybrid.arbiter import HybridModeArbiter
+# from wefax_station.hybrid.planner import ScheduleSyncAndPlanner
+# from wefax_station.storage.portable import PortableWorkspaceManager
+
+try:
+    from wefax_station.version import SOFTWARE_VERSION
+except ImportError:
+    SOFTWARE_VERSION = "2.0-qt"
 
 log = logging.getLogger("wefax.qt")
 
@@ -62,10 +69,10 @@ class AppBridge(QObject):
         self.radio = RadioBridge(parent=self)
         self.dsp = DspBridge(parent=self)
 
-        # --- Moteurs métier (sans UI) ---
-        self._workspace = PortableWorkspaceManager()
-        self._arbiter: HybridModeArbiter | None = None
-        self._planner: ScheduleSyncAndPlanner | None = None
+        # --- Moteurs métier (sans UI) — instanciés lazily dans initialize() ---
+        self._workspace = None
+        self._arbiter = None
+        self._planner = None
 
         # --- Timer polling radio (500 ms) ---
         self._radio_timer = QTimer(self)
@@ -142,6 +149,9 @@ class AppBridge(QObject):
     def openWorkspace(self, path: str) -> None:
         """Ouvre un dossier de travail portable."""
         try:
+            if self._workspace is None:
+                from wefax_station.storage.portable import PortableWorkspaceManager
+                self._workspace = PortableWorkspaceManager()
             self._workspace.set_root(Path(path))
             self.workspaceReady.emit(path)
             self.statusChanged.emit(f"Dossier de travail : {path}")
@@ -211,9 +221,10 @@ class AppBridge(QObject):
 
     def _start_arbiter(self) -> None:
         try:
+            from wefax_station.hybrid.arbiter import HybridModeArbiter
             self._arbiter = HybridModeArbiter(app=self)  # type: ignore[arg-type]
         except Exception as exc:
-            self.journalLine.emit(f"⚠️ Arbitre : {exc}")
+            self.journalLine.emit(f"⚠️ Arbitre non chargé : {exc}")
 
     def _on_phase(self, phase: str) -> None:
         status_map = {
