@@ -52,7 +52,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             model: ["RADIO", "IMAGE", "MÉTÉO", "PLAN"]
             currentIndex: mainWindow.currentTab
-            onCurrentIndexChanged: mainWindow.currentTab = index
+            onTabSelected: mainWindow.currentTab = index
 
             // Propriétés thème transmises explicitement
             bgColor:      "#1b2430"

@@ -24,7 +24,7 @@ Rectangle {
     property string fontFamily:   "Segoe UI, Ubuntu, sans-serif"
     property int    fontSizePx:   11
 
-    signal currentIndexChanged(int index)
+    signal tabSelected(int index)
 
     height: 38
     color: bgColor
@@ -73,7 +73,7 @@ Rectangle {
                 TapHandler {
                     onTapped: {
                         root.currentIndex = index
-                        root.currentIndexChanged(index)
+                        root.tabSelected(index)
                     }
                 }
 
