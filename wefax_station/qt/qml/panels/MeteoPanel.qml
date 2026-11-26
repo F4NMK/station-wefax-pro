@@ -275,7 +275,7 @@ Rectangle {
                         Layout.fillHeight: true
                         model: root.bulletins
                         clip: true
-                        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+                        QC.ScrollBar.vertical: QC.ScrollBar { policy: QC.ScrollBar.AsNeeded }
 
                         delegate: Rectangle {
                             width: ListView.view.width

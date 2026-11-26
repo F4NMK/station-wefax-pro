@@ -28,7 +28,7 @@ Rectangle {
     property bool   binAdaptive: true
     property real   usbOffset:   1.9
     property real   zoomLevel:   1.0
-    property int    rotation:    0
+    property int    imgRotation:    0
     property string imageSource: ""
     property var    spectrumData: []
     property real   progress:    0.0
@@ -247,38 +247,49 @@ Rectangle {
                             Layout.fillWidth: true
                             spacing: 4
 
-                            Slider {
+                            // Slider USB custom (Item + MouseArea, pas de QQC pour éviter warnings Windows)
+                            Item {
                                 id: usbSlider
                                 Layout.fillWidth: true
-                                from:  1.5; to: 2.5; stepSize: 0.05
-                                value: root.usbOffset
+                                implicitHeight: 20
 
-                                background: Rectangle {
-                                    x: usbSlider.leftPadding
-                                    y: usbSlider.topPadding + usbSlider.availableHeight / 2 - height / 2
-                                    width:  usbSlider.availableWidth
-                                    height: 4; radius: 2
+                                property real sliderFrom:  1.5
+                                property real sliderTo:    2.5
+                                property real sliderStep:  0.05
+                                property real sliderValue: root.usbOffset
+                                property real visualPos:   (sliderValue - sliderFrom) / (sliderTo - sliderFrom)
+
+                                // Track
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    x: 0; width: parent.width; height: 4; radius: 2
                                     color: T.Theme.bgSurface
-
                                     Rectangle {
-                                        width:  usbSlider.visualPosition * parent.width
+                                        width: parent.width * usbSlider.visualPos
                                         height: parent.height; radius: parent.radius
                                         color: T.Theme.accent
                                     }
                                 }
-
-                                handle: Rectangle {
-                                    x: usbSlider.leftPadding + usbSlider.visualPosition * usbSlider.availableWidth - width / 2
-                                    y: usbSlider.topPadding + usbSlider.availableHeight / 2 - height / 2
+                                // Handle
+                                Rectangle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    x: usbSlider.visualPos * (usbSlider.width - width)
                                     width: 14; height: 14; radius: 7
                                     color: T.Theme.accent
-                                    border.color: T.Theme.bgRoot
-                                    border.width: 2
+                                    border.color: T.Theme.bgRoot; border.width: 2
                                 }
-
-                                onValueChanged: {
-                                    root.usbOffset = value
-                                    dsp.setDspParam("usbOffset", value)
+                                MouseArea {
+                                    anchors.fill: parent
+                                    function updateVal(mx) {
+                                        const frac = Math.max(0, Math.min(1, mx / usbSlider.width))
+                                        const v = usbSlider.sliderFrom + frac * (usbSlider.sliderTo - usbSlider.sliderFrom)
+                                        const stepped = Math.round(v / usbSlider.sliderStep) * usbSlider.sliderStep
+                                        usbSlider.sliderValue = stepped
+                                        root.usbOffset = stepped
+                                        dsp.setDspParam("usbOffset", stepped)
+                                    }
+                                    onClicked: (mouse) => updateVal(mouse.x)
+                                    onPositionChanged: (mouse) => { if (pressed) updateVal(mouse.x) }
                                 }
                             }
 
@@ -322,9 +333,9 @@ Rectangle {
                                 model: [{ lbl: "0°", val: 0 }, { lbl: "90°", val: 90 }, { lbl: "180°", val: 180 }, { lbl: "270°", val: 270 }]
                                 delegate: C.FlatButton {
                                     text:   modelData.lbl
-                                    accent: root.rotation === modelData.val
+                                    accent: root.imgRotation === modelData.val
                                     Layout.fillWidth: true
-                                    onClicked: root.rotation = modelData.val
+                                    onClicked: root.imgRotation = modelData.val
                                 }
                             }
                         }
@@ -470,11 +481,9 @@ Rectangle {
                         fillMode:        root.zoomLevel < 0 ? Image.PreserveAspectFit : Image.Pad
                         width:           root.zoomLevel < 0 ? parent.width  : sourceSize.width  * root.zoomLevel
                         height:          root.zoomLevel < 0 ? parent.height : sourceSize.height * root.zoomLevel
-                        rotation:        root.rotation
+                        rotation:        root.imgRotation
                         smooth:          true
                         visible:         root.imageSource !== ""
-
-                        Behavior on rotation { NumberAnimation { duration: 200 } }
                     }
 
                     // Info image (en bas)
@@ -498,40 +507,5 @@ Rectangle {
             }
         }
     }
-}
 
-// Composant Slider minimal (car QQC Slider génère des warnings)
-component Slider: Item {
-    id: sliderRoot
-    property real from:        0.0
-    property real to:          1.0
-    property real stepSize:    0.01
-    property real value:       from
-    property real visualPosition: (value - from) / (to - from)
-    property real leftPadding:    0
-    property real rightPadding:   0
-    property real topPadding:     0
-    property real bottomPadding:  0
-    property real availableWidth:  width
-    property real availableHeight: height
-
-    signal valueChanged()
-
-    implicitHeight: 20
-
-    MouseArea {
-        anchors.fill: parent
-        onClicked: (mouse) => {
-            const frac = mouse.x / width
-            sliderRoot.value = sliderRoot.from + frac * (sliderRoot.to - sliderRoot.from)
-            sliderRoot.valueChanged()
-        }
-        onPositionChanged: (mouse) => {
-            if (pressed) {
-                const frac = Math.max(0, Math.min(1, mouse.x / width))
-                sliderRoot.value = sliderRoot.from + frac * (sliderRoot.to - sliderRoot.from)
-                sliderRoot.valueChanged()
-            }
-        }
-    }
 }

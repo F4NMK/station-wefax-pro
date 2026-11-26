@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls
 import "../components" as C
 import ".." as T
 
@@ -481,7 +482,7 @@ Rectangle {
                                     elide: Text.ElideRight
                                 }
 
-                                Cell { text: model.id;      cw: 60; color: T.Theme.accentLight; font.bold: true }
+                                Cell { text: model.code;    cw: 60; color: T.Theme.accentLight; font.bold: true }
                                 Cell { text: model.station; Layout.fillWidth: true }
                                 Cell { text: model.freq + " kHz"; cw: 80 }
                                 Cell { text: model.period;        cw: 70 }
@@ -499,7 +500,7 @@ Rectangle {
                                     Layout.preferredWidth: 52
                                     onClicked: {
                                         radio.tuneStation(model.freq)
-                                        radioLog.append("QSY → " + model.id + " " + model.freq + " kHz")
+                                        radioLog.append("QSY → " + model.code + " " + model.freq + " kHz")
                                     }
                                 }
                             }
@@ -553,20 +554,20 @@ Rectangle {
     // ── Modèle stations (depuis core/stations.py via appBridge) ─────────────
     ListModel {
         id: stationsModel
-        ListElement { id: "DDH3";  station: "DWD Pinneberg";  freq: 3855.0;   period: "NUIT";      snr: -99; snrText: "---" }
-        ListElement { id: "DDK3";  station: "DWD Pinneberg";  freq: 7880.0;   period: "JOUR/NUIT"; snr: -99; snrText: "---" }
-        ListElement { id: "DDK6";  station: "DWD Pinneberg";  freq: 13882.5;  period: "JOUR";      snr: -99; snrText: "---" }
-        ListElement { id: "GYA1";  station: "Northwood UK";   freq: 2618.5;   period: "NUIT";      snr: -99; snrText: "---" }
-        ListElement { id: "GYA2";  station: "Northwood UK";   freq: 4610.0;   period: "NUIT";      snr: -99; snrText: "---" }
-        ListElement { id: "GYA3";  station: "Northwood UK";   freq: 8040.0;   period: "JOUR/NUIT"; snr: -99; snrText: "---" }
-        ListElement { id: "GYA4";  station: "Northwood UK";   freq: 11086.5;  period: "JOUR";      snr: -99; snrText: "---" }
+        ListElement { code: "DDH3";  station: "DWD Pinneberg";  freq: 3855.0;   period: "NUIT";      snr: -99; snrText: "---" }
+        ListElement { code: "DDK3";  station: "DWD Pinneberg";  freq: 7880.0;   period: "JOUR/NUIT"; snr: -99; snrText: "---" }
+        ListElement { code: "DDK6";  station: "DWD Pinneberg";  freq: 13882.5;  period: "JOUR";      snr: -99; snrText: "---" }
+        ListElement { code: "GYA1";  station: "Northwood UK";   freq: 2618.5;   period: "NUIT";      snr: -99; snrText: "---" }
+        ListElement { code: "GYA2";  station: "Northwood UK";   freq: 4610.0;   period: "NUIT";      snr: -99; snrText: "---" }
+        ListElement { code: "GYA3";  station: "Northwood UK";   freq: 8040.0;   period: "JOUR/NUIT"; snr: -99; snrText: "---" }
+        ListElement { code: "GYA4";  station: "Northwood UK";   freq: 11086.5;  period: "JOUR";      snr: -99; snrText: "---" }
     }
 
     // Mise à jour du modèle quand le scan est terminé
     onScanResultsChanged: {
         for (let r of scanResults) {
             for (let i = 0; i < stationsModel.count; i++) {
-                if (stationsModel.get(i).id === r.id) {
+                if (stationsModel.get(i).code === r.code) {
                     stationsModel.setProperty(i, "snr",     r.snr)
                     stationsModel.setProperty(i, "snrText", r.snrText)
                 }

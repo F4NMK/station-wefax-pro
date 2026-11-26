@@ -23,7 +23,6 @@ Rectangle {
     property string fontFamily:  T.Theme.fontBase
     property alias  readOnly:    input.readOnly
 
-    signal textChanged(string text)
     signal accepted()
 
     implicitWidth:  100
@@ -61,7 +60,7 @@ Rectangle {
         selectByMouse:   true
         enabled:         root.enabled
 
-        onTextChanged:   root.textChanged(text)
+        onTextChanged:   {} // signal natif textChanged propagé via alias
         Keys.onReturnPressed: root.accepted()
     }
 
