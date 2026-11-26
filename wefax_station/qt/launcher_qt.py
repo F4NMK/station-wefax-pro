@@ -66,7 +66,7 @@ def main() -> int:
     ctx = engine.rootContext()
     ctx.setContextProperty("radio", radio_bridge)
     ctx.setContextProperty("dsp",   dsp_bridge)
-    ctx.setContextProperty("app",   app_bridge)
+    ctx.setContextProperty("appBridge", app_bridge)
 
     # Chargement de main.qml
     main_qml = _QML_DIR / "main.qml"

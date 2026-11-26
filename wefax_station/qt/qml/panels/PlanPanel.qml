@@ -7,8 +7,8 @@ import ".." as T
 /*
  * PlanPanel.qml — Onglet PLAN (programme de réception)
  *
- * Context property attendu : app (AppBridge)
- * Signal app.scheduleChanged() déclenche la mise à jour de la grille.
+ * Context property attendu : appBridge (AppBridge)
+ * Signal appBridge.scheduleChanged() déclenche la mise à jour de la grille.
  */
 Rectangle {
     id: root
@@ -18,9 +18,9 @@ Rectangle {
     ListModel { id: scheduleModel }
 
     Connections {
-        target: app
+        target: appBridge
         function onScheduleChanged() {
-            // TODO : app.getSchedule() retournera une liste de dicts :
+            // TODO : appBridge.getSchedule() retournera une liste de dicts :
             // { time, source, freq_mhz, mode, duration_min, status }
             // scheduleModel.clear()
             // for each entry: scheduleModel.append(entry)
@@ -47,7 +47,7 @@ Rectangle {
 
             Button {
                 text: "Actualiser"
-                onClicked: app.requestScheduleRefresh()
+                onClicked: appBridge.requestScheduleRefresh()
 
                 background: Rectangle {
                     color: parent.hovered ? T.Theme.accentHover : T.Theme.accent
@@ -188,7 +188,7 @@ Rectangle {
     }
 
     Connections {
-        target: app
+        target: appBridge
         function onJournalLine(text) { planLog.append(text) }
     }
 }

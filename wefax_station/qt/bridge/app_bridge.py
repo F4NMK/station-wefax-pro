@@ -200,6 +200,11 @@ class AppBridge(QObject):
     def stopAudio(self) -> None:
         self._stop_audio()
 
+    @pyqtSlot()
+    def requestScheduleRefresh(self) -> None:
+        """Appelé par PlanPanel.qml pour rafraîchir la grille de programme."""
+        self._refresh_schedule()
+
     def _stop_audio(self) -> None:
         stream = getattr(self, "_sd_stream", None)
         if stream is not None:

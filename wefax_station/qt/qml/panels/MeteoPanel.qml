@@ -6,7 +6,7 @@ import ".." as T
  * MeteoPanel.qml — Onglet MÉTÉO
  *
  * Affiche les dernières données GRIB / nowcast reçues.
- * Context property attendu : app (AppBridge)
+ * Context property attendu : appBridge (AppBridge)
  *
  * Les données météo sont en lecture seule dans ce panneau ;
  * le moteur GRIB/nowcast reste dans Python.
@@ -19,7 +19,7 @@ Rectangle {
     property var meteoData: null
 
     Connections {
-        target: app
+        target: appBridge
         function onScheduleChanged() {
             // TODO : AppBridge devra exposer un slot getMeteoSummary()
             // et un signal meteoUpdated(var data) — à implémenter en passe 2

@@ -11,7 +11,7 @@ import "panels"
  * Context properties enregistrées par launcher_qt.py :
  *   radio : RadioBridge
  *   dsp   : DspBridge
- *   app   : AppBridge
+ * appBridge : AppBridge
  */
 ApplicationWindow {
     id:       mainWindow
@@ -34,7 +34,7 @@ ApplicationWindow {
     property string currentMode:  "IDLE"
 
     Connections {
-        target: app
+        target: appBridge
         function onStatusChanged(text)   { mainWindow.appStatus = text }
         function onModeChanged(mode)     { mainWindow.currentMode = mode }
         function onAudioConnected(ok)    { mainWindow.audioOk = ok }
@@ -88,16 +88,16 @@ ApplicationWindow {
     // ── Fermeture propre ─────────────────────────────────────────────────
     onClosing: function(close) {
         close.accepted = false   // on laisse AppBridge décider
-        app.requestClose()
+        appBridge.requestClose()
     }
 
     Connections {
-        target: app
+        target: appBridge
         function onClosingApp() { Qt.quit() }
     }
 
     // ── Initialisation ───────────────────────────────────────────────────
     Component.onCompleted: {
-        app.initialize()
+        appBridge.initialize()
     }
 }

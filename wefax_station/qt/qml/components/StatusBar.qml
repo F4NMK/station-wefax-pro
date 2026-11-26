@@ -56,7 +56,7 @@ Rectangle {
             radius: 4
             color: root.audioConnected ? T.Theme.okBg : T.Theme.errBg
 
-            ToolTip.visible: audioHover.containsMouse
+            ToolTip.visible: audioHover.hovered
             ToolTip.text:    root.audioConnected ? "Audio connecté" : "Audio déconnecté"
 
             HoverHandler { id: audioHover }
