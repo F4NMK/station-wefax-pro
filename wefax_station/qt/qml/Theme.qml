@@ -33,14 +33,18 @@ QtObject {
 
     // ── États sémantiques ─────────────────────────────────────────────────
     readonly property color okBg:   "#15803d"
-    readonly property color okFg:   "#dcfce7"
+    readonly property color okFg:   "#86efac"
     readonly property color warnBg: "#b45309"
-    readonly property color warnFg: "#fef3c7"
+    readonly property color warnFg: "#fcd34d"
     readonly property color errBg:  "#b91c1c"
-    readonly property color errFg:  "#fee2e2"
+    readonly property color errFg:  "#fca5a5"
+
+    // ── Accent bordure ────────────────────────────────────────────────────
+    readonly property color accentBorder: "#3b82f6"
 
     // ── Typographie ───────────────────────────────────────────────────────
     readonly property string fontMono:  "Consolas, 'Courier New', monospace"
+    readonly property string fontBase:  "Segoe UI, Ubuntu, sans-serif"
     readonly property string fontUi:    "Segoe UI, Ubuntu, sans-serif"
     readonly property int    fontSizeXs: 9
     readonly property int    fontSizeSm: 10

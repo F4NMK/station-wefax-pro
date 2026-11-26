@@ -1,61 +1,125 @@
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Controls
 import "../components" as C
 import ".." as T
 
 /*
- * PlanPanel.qml — Onglet PLAN (programme de réception)
+ * PlanPanel.qml — Onglet PLAN (programme de réceptions DWD/GYA)
  *
- * Context property attendu : appBridge (AppBridge)
- * Signal appBridge.scheduleChanged() déclenche la mise à jour de la grille.
+ * Recrée le ReceptionPlanMixin Tkinter + horloge UTC
  */
 Rectangle {
     id: root
     color: T.Theme.bgRoot
 
-    // Modèle de grille — alimenté par AppBridge.getSchedule() (à implémenter)
+    // ── Modèle planning ──────────────────────────────────────────────────────
     ListModel { id: scheduleModel }
 
-    Connections {
-        target: appBridge
-        function onScheduleChanged() {
-            // TODO : appBridge.getSchedule() retournera une liste de dicts :
-            // { time, source, freq_mhz, mode, duration_min, status }
-            // scheduleModel.clear()
-            // for each entry: scheduleModel.append(entry)
+    // ── État local ───────────────────────────────────────────────────────────
+    property string utcTime: Qt.formatTime(new Date(), "HH:mm:ss") + " UTC"
+    property string utcDate: Qt.formatDate(new Date(), "dddd dd MMM yyyy")
+    property string filterStation: "TOUTES"
+    property string filterMode:    "TOUS"
+
+    // Mise à jour horloge chaque seconde
+    Timer {
+        interval: 1000; running: true; repeat: true
+        onTriggered: {
+            root.utcTime = Qt.formatDateTime(new Date(), "HH:mm:ss") + " UTC"
+            root.utcDate = Qt.formatDateTime(new Date(), "dddd dd MMM yyyy")
         }
     }
 
+    // ── Connexion aux ponts ──────────────────────────────────────────────────
+    Connections {
+        target: appBridge
+
+        function onScheduleChanged(schedule) {
+            scheduleModel.clear()
+            for (let i = 0; i < schedule.length; i++) {
+                scheduleModel.append(schedule[i])
+            }
+        }
+    }
+
+    // ── Remplissage initial depuis schedules.py (via bridge) ─────────────────
+    Component.onCompleted: {
+        appBridge.requestScheduleRefresh()
+    }
+
+    // ── Mise en page principale ──────────────────────────────────────────────
     ColumnLayout {
         anchors { fill: parent; margins: T.Theme.spacingLg }
-        spacing: T.Theme.spacingLg
+        spacing: T.Theme.spacing
 
-        // ── En-tête + bouton actualiser ────────────────────────────────
+        // ── Horloge UTC + filtres ─────────────────────────────────────────
         RowLayout {
             Layout.fillWidth: true
+            spacing: T.Theme.spacing
 
-            Text {
-                text: "PROGRAMME DE RÉCEPTION"
-                color: T.Theme.textDim
-                font.family: T.Theme.fontMono
-                font.pixelSize: T.Theme.fontSizeXs
-                font.letterSpacing: 2
+            // Horloge
+            Rectangle {
+                width: 220; height: 56
+                color: T.Theme.bgPanel
+                radius: T.Theme.radiusMd
+                border.color: T.Theme.border
+
+                Column {
+                    anchors.centerIn: parent
+                    spacing: 2
+
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: root.utcTime
+                        color: T.Theme.textPrimary
+                        font.family: T.Theme.fontMono
+                        font.pixelSize: 22
+                        font.bold: true
+                    }
+                    Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        text: root.utcDate
+                        color: T.Theme.textDim
+                        font.family: T.Theme.fontMono
+                        font.pixelSize: T.Theme.fontSizeXs
+                    }
+                }
+            }
+
+            // Filtre station
+            Text { text: "Station :"; color: T.Theme.textDim; font.family: T.Theme.fontMono; font.pixelSize: T.Theme.fontSizeSm }
+            C.DropDown {
+                model: ["TOUTES", "DWD (DDH3/DDK3/DDK6)", "Northwood (GYA)", "RTTY"]
+                currentText: root.filterStation
+                onSelected: (txt) => root.filterStation = txt
+            }
+
+            // Filtre mode
+            Text { text: "Mode :"; color: T.Theme.textDim; font.family: T.Theme.fontMono; font.pixelSize: T.Theme.fontSizeSm }
+            C.DropDown {
+                model: ["TOUS", "WEFAX", "RTTY", "NAVTEX"]
+                currentText: root.filterMode
+                onSelected: (txt) => root.filterMode = txt
             }
 
             Item { Layout.fillWidth: true }
 
             C.FlatButton {
-                text:   "Actualiser"
-                accent: true
+                text:    "🔄 Rafraîchir"
+                accent:  false
                 onClicked: appBridge.requestScheduleRefresh()
+            }
+            C.FlatButton {
+                text:    "▶ Prochaine"
+                accent:  true
+                onClicked: appBridge.startNextScheduled()
             }
         }
 
-        // ── En-têtes de colonne ────────────────────────────────────────
+        // ── En-têtes colonnes ─────────────────────────────────────────────
         Rectangle {
             Layout.fillWidth: true
-            height: 28
+            height: 24
             color: T.Theme.bgSurface
             radius: T.Theme.radiusSm
 
@@ -63,119 +127,186 @@ Rectangle {
                 anchors { fill: parent; leftMargin: 8; rightMargin: 8 }
                 spacing: 0
 
-                component HeaderCell: Text {
-                    property int cellWidth: 100
-                    Layout.preferredWidth: cellWidth
+                component Hdr: Text {
+                    property int cw: 80
+                    Layout.preferredWidth: cw
                     color: T.Theme.textDim
                     font.family: T.Theme.fontMono
                     font.pixelSize: T.Theme.fontSizeXs
-                    font.letterSpacing: 0.8
+                    font.letterSpacing: 1
                 }
-
-                HeaderCell { text: "HEURE UTC"; cellWidth: 90 }
-                HeaderCell { text: "SOURCE";    cellWidth: 120 }
-                HeaderCell { text: "FRÉQUENCE"; cellWidth: 100 }
-                HeaderCell { text: "MODE";      cellWidth: 80 }
-                HeaderCell { text: "DURÉE";     cellWidth: 70 }
-                HeaderCell { text: "STATUT";    Layout.fillWidth: true }
+                Hdr { text: "HEURE UTC"; cw: 90 }
+                Hdr { text: "DURÉE";     cw: 55 }
+                Hdr { text: "ÉMETTEUR";  cw: 160; Layout.fillWidth: true }
+                Hdr { text: "FRÉQUENCE"; cw: 90 }
+                Hdr { text: "MODE";      cw: 70 }
+                Hdr { text: "STATUT";    cw: 80 }
+                Hdr { text: "";          cw: 70 }
             }
         }
 
-        // ── Grille de programme ───────────────────────────────────────
-        Rectangle {
+        // ── Liste planning ────────────────────────────────────────────────
+        ListView {
             Layout.fillWidth: true
             Layout.fillHeight: true
+            model: scheduleModel
+            clip:  true
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+            // Filtre dynamique — liste proxy simulée via visible
+            delegate: Rectangle {
+                readonly property bool matchStation: root.filterStation === "TOUTES"
+                    || (root.filterStation.indexOf("DWD") >= 0 && (model.station_id || "").indexOf("DDH") >= 0)
+                    || (root.filterStation.indexOf("DWD") >= 0 && (model.station_id || "").indexOf("DDK") >= 0)
+                    || (root.filterStation.indexOf("GYA") >= 0 && (model.station_id || "").indexOf("GYA") >= 0)
+                    || (root.filterStation.indexOf("RTTY") >= 0 && (model.mode || "") === "RTTY")
+
+                readonly property bool matchMode: root.filterMode === "TOUS"
+                    || model.mode === root.filterMode
+
+                visible:  matchStation && matchMode
+                height:   matchStation && matchMode ? 30 : 0
+                width:    ListView.view.width
+
+                readonly property bool isNext:   model.status === "PROCHAIN"
+                readonly property bool isActive: model.status === "EN COURS"
+
+                color: isActive ? Qt.rgba(0.14, 0.38, 0.92, 0.12) :
+                       isNext   ? Qt.rgba(1, 0.65, 0,    0.08) :
+                       index % 2 === 0 ? "transparent" : Qt.rgba(1,1,1,0.03)
+
+                // Bordure gauche colorée
+                Rectangle {
+                    width: 3; height: parent.height
+                    color: parent.isActive ? T.Theme.accent :
+                           parent.isNext   ? T.Theme.warnFg : "transparent"
+                }
+
+                RowLayout {
+                    anchors { fill: parent; leftMargin: 11; rightMargin: 8 }
+                    spacing: 0
+
+                    component Cell: Text {
+                        property int cw: 80
+                        Layout.preferredWidth: cw
+                        color: T.Theme.textMuted
+                        font.family: T.Theme.fontMono
+                        font.pixelSize: T.Theme.fontSizeSm
+                        elide: Text.ElideRight
+                    }
+
+                    Cell {
+                        text:  model.time_utc || "---"
+                        cw:    90
+                        color: parent.parent.parent.isNext ? T.Theme.warnFg : T.Theme.textPrimary
+                        font.bold: parent.parent.parent.isNext
+                    }
+                    Cell { text: model.duration_min !== undefined ? model.duration_min + "'" : "---"; cw: 55 }
+                    Cell { text: model.station_name || "---"; Layout.fillWidth: true }
+                    Cell { text: (model.freq_khz !== undefined ? model.freq_khz.toFixed(1) : "---") + " kHz"; cw: 90 }
+
+                    // Badge mode
+                    Rectangle {
+                        Layout.preferredWidth: 60
+                        height: 18
+                        radius: T.Theme.radiusSm
+                        color: T.Theme.modeColor(model.mode || "")
+                        opacity: 0.3
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: model.mode || "---"
+                            color: T.Theme.textPrimary
+                            font.family: T.Theme.fontMono
+                            font.pixelSize: T.Theme.fontSizeXs
+                            font.bold: true
+                        }
+                    }
+
+                    // Statut
+                    Cell {
+                        text: model.status || "---"
+                        cw: 80
+                        color: parent.parent.parent.isActive ? T.Theme.okFg :
+                               parent.parent.parent.isNext   ? T.Theme.warnFg : T.Theme.textDim
+                    }
+
+                    // Bouton Lancer
+                    C.FlatButton {
+                        text:    "Lancer"
+                        accent:  parent.parent.parent.isNext
+                        enabled: model.status !== "PASSÉ"
+                        implicitWidth:  60
+                        implicitHeight: 20
+                        Layout.preferredWidth: 60
+                        onClicked: {
+                            appBridge.launchScheduledReception(model.station_id, model.freq_khz)
+                        }
+                    }
+                }
+
+                HoverHandler { id: rowHov }
+                Rectangle {
+                    anchors.fill: parent; color: "white"
+                    opacity: rowHov.hovered ? 0.03 : 0
+                }
+            }
+
+            // Placeholder si vide
+            Text {
+                anchors.centerIn: parent
+                visible: scheduleModel.count === 0
+                text: "Programme chargement…\n\nLes émissions DWD (Pinneberg) et\nNorthwood (GYA) apparaîtront ici\navec leurs horaires UTC."
+                color: T.Theme.textDim
+                font.family: T.Theme.fontMono
+                font.pixelSize: T.Theme.fontSizeSm
+                horizontalAlignment: Text.AlignHCenter
+            }
+        }
+
+        // ── Prochaine réception + actions rapides ─────────────────────────
+        Rectangle {
+            Layout.fillWidth: true
+            height: 50
             color: T.Theme.bgPanel
             radius: T.Theme.radiusMd
             border.color: T.Theme.border
-            clip: true
 
-            ListView {
-                id: scheduleList
-                anchors { fill: parent; margins: 4 }
-                model: scheduleModel
-                clip: true
+            RowLayout {
+                anchors { fill: parent; margins: T.Theme.spacing }
+                spacing: T.Theme.spacing
 
-                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-                // Placeholder si vide
                 Text {
-                    visible: scheduleModel.count === 0
-                    anchors.centerIn: parent
-                    text: "Aucun programme chargé\nCliquez sur « Actualiser »"
+                    id: nextLabel
+                    text: "PROCHAINE ÉMISSION :"
                     color: T.Theme.textDim
                     font.family: T.Theme.fontMono
+                    font.pixelSize: T.Theme.fontSizeXs
+                    font.letterSpacing: 1
+                }
+
+                Text {
+                    text: {
+                        for (let i = 0; i < scheduleModel.count; i++) {
+                            const e = scheduleModel.get(i)
+                            if (e.status === "PROCHAIN") return e.time_utc + " — " + e.station_name + " (" + e.freq_khz + " kHz)"
+                        }
+                        return "Aucune dans les prochaines heures"
+                    }
+                    color: T.Theme.warnFg
+                    font.family: T.Theme.fontMono
                     font.pixelSize: T.Theme.fontSizeSm
-                    horizontalAlignment: Text.AlignHCenter
+                    font.bold: true
                 }
 
-                delegate: Rectangle {
-                    width: scheduleList.width
-                    height: 32
-                    color: index % 2 === 0 ? "transparent" : Qt.rgba(1,1,1,0.03)
+                Item { Layout.fillWidth: true }
 
-                    // Surbrillance survol
-                    HoverHandler { id: rowHov }
-                    Rectangle {
-                        anchors.fill: parent
-                        color: "white"
-                        opacity: rowHov.hovered ? 0.05 : 0
-                        Behavior on opacity { NumberAnimation { duration: 80 } }
-                    }
-
-                    RowLayout {
-                        anchors { fill: parent; leftMargin: 8; rightMargin: 8 }
-                        spacing: 0
-
-                        component Cell: Text {
-                            property int cellWidth: 100
-                            Layout.preferredWidth: cellWidth
-                            color: T.Theme.textMuted
-                            font.family: T.Theme.fontMono
-                            font.pixelSize: T.Theme.fontSizeSm
-                            elide: Text.ElideRight
-                        }
-
-                        Cell { text: model.time      || ""; cellWidth: 90 }
-                        Cell { text: model.source     || ""; cellWidth: 120 }
-                        Cell { text: model.freq_mhz  ? model.freq_mhz.toFixed(3) + " MHz" : ""; cellWidth: 100 }
-                        Cell { text: model.mode       || ""; cellWidth: 80 }
-                        Cell { text: model.duration_min ? model.duration_min + " min" : ""; cellWidth: 70 }
-
-                        // Statut coloré
-                        Text {
-                            Layout.fillWidth: true
-                            text: model.status || ""
-                            color: {
-                                const s = (model.status || "").toLowerCase()
-                                if (s.includes("ok") || s.includes("reçu")) return T.Theme.okFg
-                                if (s.includes("en cours"))                 return T.Theme.accentLight
-                                if (s.includes("manqué") || s.includes("err")) return T.Theme.errFg
-                                return T.Theme.textDim
-                            }
-                            font.family: T.Theme.fontMono
-                            font.pixelSize: T.Theme.fontSizeSm
-                            elide: Text.ElideRight
-                        }
-                    }
+                C.FlatButton {
+                    text:    "📥 Télécharger cartes web"
+                    accent:  false
+                    onClicked: appBridge.downloadWebCharts()
                 }
             }
         }
-
-        // ── Log planificateur ─────────────────────────────────────────
-        C.LogView {
-            id: planLog
-            Layout.fillWidth: true
-            height: 100
-
-            Component.onCompleted: {
-                // Écouter les messages d'AppBridge
-            }
-        }
-    }
-
-    Connections {
-        target: appBridge
-        function onJournalLine(text) { planLog.append(text) }
     }
 }

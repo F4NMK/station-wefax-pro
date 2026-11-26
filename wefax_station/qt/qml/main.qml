@@ -4,78 +4,86 @@ import QtQuick.Controls
 import QtQuick.Window
 import "components" as C
 import "panels"
+import "." as T
 
 /*
  * main.qml — Fenêtre racine de Station WEFAX PRO (interface Qt)
  *
  * Context properties enregistrées par launcher_qt.py :
- *   radio : RadioBridge
- *   dsp   : DspBridge
- * appBridge : AppBridge
+ *   radio     : RadioBridge
+ *   dsp       : DspBridge
+ *   appBridge : AppBridge
+ *
+ * Onglets :
+ *   0  RADIO   — contrôle IC-705, scan, RF
+ *   1  IMAGE   — WEFAX décodage + DSP
+ *   2  RTTY    — téléimprimeur RTTY / NAVTEX
+ *   3  MÉTÉO   — synoptique + bulletins
+ *   4  PLAN    — programme émissions UTC
+ *   5  CONFIG  — paramètres + switch UI
  */
 ApplicationWindow {
-    id:       mainWindow
-    title:    "Station WEFAX PRO — Qt Edition"
-    width:    1280
-    height:   820
+    id:            mainWindow
+    title:         "Station WEFAX PRO — Qt Edition"
+    width:         1280
+    height:        820
     minimumWidth:  900
     minimumHeight: 600
-    visible:  true
-    color:    "#131922"   // Theme.bgRoot — littéral ici, singleton chargé ci-dessous
+    visible:       true
+    color:         T.Theme.bgRoot
 
-    // ── Singleton thème ─────────────────────────────────────────────────
-    // (déclaré dans qmldir, importé implicitement sous ".")
-    // On y accède via T.Theme depuis les fichiers enfants.
-
-    // ── État global ─────────────────────────────────────────────────────
+    // ── État global ──────────────────────────────────────────────────────────
     property int    currentTab:   0
     property string appStatus:    "Démarrage…"
     property bool   audioOk:      false
     property string currentMode:  "IDLE"
 
+    // ── Connexions AppBridge ─────────────────────────────────────────────────
     Connections {
         target: appBridge
         function onStatusChanged(text)   { mainWindow.appStatus = text }
         function onModeChanged(mode)     { mainWindow.currentMode = mode }
         function onAudioConnected(ok)    { mainWindow.audioOk = ok }
         function onVersionReady(ver)     { mainWindow.title = "Station WEFAX PRO " + ver + " — Qt Edition" }
+        function onClosingApp()          { Qt.quit() }
     }
 
-    // ── Layout principal ─────────────────────────────────────────────────
+    // ── Layout principal ─────────────────────────────────────────────────────
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
 
-        // ── Barre d'onglets ─────────────────────────────────────────────
+        // ── Barre d'onglets ───────────────────────────────────────────────
         C.TabBar {
             id: mainTabBar
             Layout.fillWidth: true
-            model: ["RADIO", "IMAGE", "MÉTÉO", "PLAN"]
+            model: ["📡 RADIO", "🖼 IMAGE", "🔤 RTTY", "🌦 MÉTÉO", "📅 PLAN", "⚙ CONFIG"]
             currentIndex: mainWindow.currentTab
-            onTabSelected: mainWindow.currentTab = index
+            onTabSelected: (idx) => mainWindow.currentTab = idx
 
-            // Propriétés thème transmises explicitement
-            bgColor:      "#1b2430"
-            borderColor:  "#2e3d4f"
-            accentColor:  "#2563eb"
-            textActive:   "#e6edf3"
-            textInactive: "#64748b"
+            bgColor:      T.Theme.bgPanel
+            borderColor:  T.Theme.border
+            accentColor:  T.Theme.accent
+            textActive:   T.Theme.textPrimary
+            textInactive: T.Theme.textDim
         }
 
-        // ── Zone de contenu (StackLayout) ───────────────────────────────
+        // ── Contenu ───────────────────────────────────────────────────────
         StackLayout {
             id: contentStack
-            Layout.fillWidth: true
+            Layout.fillWidth:  true
             Layout.fillHeight: true
             currentIndex: mainWindow.currentTab
 
-            RadioPanel { id: radioPanel }
-            ImagePanel { id: imagePanel }
-            MeteoPanel { id: meteoPanel }
-            PlanPanel  { id: planPanel  }
+            RadioPanel    { id: radioPanel   }
+            ImagePanel    { id: imagePanel   }
+            RttyPanel     { id: rttyPanel    }
+            MeteoPanel    { id: meteoPanel   }
+            PlanPanel     { id: planPanel    }
+            SettingsPanel { id: settingsPanel }
         }
 
-        // ── Barre de statut ─────────────────────────────────────────────
+        // ── Barre de statut ───────────────────────────────────────────────
         C.StatusBar {
             Layout.fillWidth: true
             statusText:     mainWindow.appStatus
@@ -85,18 +93,37 @@ ApplicationWindow {
         }
     }
 
-    // ── Fermeture propre ─────────────────────────────────────────────────
+    // ── Fermeture propre ─────────────────────────────────────────────────────
     onClosing: function(close) {
-        close.accepted = false   // on laisse AppBridge décider
+        close.accepted = false
         appBridge.requestClose()
     }
 
-    Connections {
-        target: appBridge
-        function onClosingApp() { Qt.quit() }
+    // ── Raccourcis clavier ───────────────────────────────────────────────────
+    Shortcut {
+        sequence: "Ctrl+1"; onActivated: mainWindow.currentTab = 0
+    }
+    Shortcut {
+        sequence: "Ctrl+2"; onActivated: mainWindow.currentTab = 1
+    }
+    Shortcut {
+        sequence: "Ctrl+3"; onActivated: mainWindow.currentTab = 2
+    }
+    Shortcut {
+        sequence: "Ctrl+4"; onActivated: mainWindow.currentTab = 3
+    }
+    Shortcut {
+        sequence: "Ctrl+5"; onActivated: mainWindow.currentTab = 4
+    }
+    Shortcut {
+        sequence: "Ctrl+6"; onActivated: mainWindow.currentTab = 5
+    }
+    Shortcut {
+        sequence: "Ctrl+Q"
+        onActivated: appBridge.requestClose()
     }
 
-    // ── Initialisation ───────────────────────────────────────────────────
+    // ── Initialisation ───────────────────────────────────────────────────────
     Component.onCompleted: {
         appBridge.initialize()
     }

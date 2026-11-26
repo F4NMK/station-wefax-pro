@@ -1,0 +1,8 @@
+module WefaxStation.Components
+DropDown  1.0 DropDown.qml
+FlatButton 1.0 FlatButton.qml
+LogView   1.0 LogView.qml
+SMeter    1.0 SMeter.qml
+StatusBar 1.0 StatusBar.qml
+TabBar    1.0 TabBar.qml
+TextInput 1.0 TextInput.qml

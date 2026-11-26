@@ -30,7 +30,7 @@ class DspBridge(QObject):
 
     spectrumReady      = pyqtSignal("QVariantList",  arguments=["spectrum"])
     signalLevelChanged = pyqtSignal(float,           arguments=["level"])
-    lineReceived       = pyqtSignal(int, "QByteArray", arguments=["lineNo", "pixels"])
+    lineReceived       = pyqtSignal(int, float,      arguments=["lineNo", "fraction"])
     imageCompleted     = pyqtSignal(str,             arguments=["path"])
     snrChanged         = pyqtSignal(float,           arguments=["snr"])
     phaseDetected      = pyqtSignal(str,             arguments=["phase"])
@@ -49,6 +49,12 @@ class DspBridge(QObject):
         self._phase = "IDLE"
         self._snr: float = 0.0
         self._level: float = 0.0
+
+        # Buffer RTTY (pour sauvegarde)
+        self._rtty_lines: list[str] = []
+        self._rtty_baud: int = 50
+        self._rtty_shift_hz: int = 450
+        self._lines_received: int = 0
 
     # ---------------------------------------------------------------- propriétés
 
@@ -126,6 +132,20 @@ class DspBridge(QObject):
                 if phase != self._phase:
                     self._phase = phase
                     self.phaseDetected.emit(phase)
+
+                # Lignes reçues (progression image)
+                n_lines = int(sig.get("lines_received", 0))
+                if n_lines != self._lines_received:
+                    self._lines_received = n_lines
+                    total_expected = int(sig.get("total_lines", 800)) or 800
+                    fraction = min(1.0, n_lines / total_expected)
+                    self.lineReceived.emit(n_lines, fraction)
+
+                # Chemin image complète
+                img_path = sig.get("image_path", "")
+                if img_path and phase == "STOP":
+                    self.imageCompleted.emit(str(img_path))
+
         except Exception:
             pass
 
@@ -134,7 +154,25 @@ class DspBridge(QObject):
         """Réinitialise le moteur DSP (entre deux réceptions)."""
         self._engine.reset_filter_states()
         self._phase = "IDLE"
+        self._lines_received = 0
         self.phaseDetected.emit("IDLE")
+
+    @pyqtSlot(str, "QVariant")
+    def setDspParam(self, param: str, value) -> None:
+        """Applique un paramètre DSP (notch FFT, tenseur, binarisation, offset USB)."""
+        try:
+            if hasattr(self._engine, "set_param"):
+                self._engine.set_param(param, value)
+            elif hasattr(self._engine, param):
+                setattr(self._engine, param, value)
+        except Exception:
+            pass
+
+    def set_rtty_baud(self, baud: int) -> None:
+        self._rtty_baud = baud
+
+    def set_rtty_shift(self, shift_hz: int) -> None:
+        self._rtty_shift_hz = shift_hz
 
     # ---------------------------------------------------------------- accès brut (ponts internes)
 
