@@ -120,6 +120,8 @@ class AppBridge(QObject):
         self.dsp.phaseDetected.connect(self._on_phase)
         self.dsp.lineReceived.connect(self._on_dsp_line)
         self.dsp.imageCompleted.connect(self._on_image_completed)
+        # Câblage DSP → AGC-RF : DspBridge alimente RadioBridge en métriques RMS/SNR
+        self.dsp.set_radio_bridge(self.radio)
 
     # ── Propriétés ───────────────────────────────────────────────────────────
 

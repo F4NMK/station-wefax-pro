@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import threading
 import numpy as np
+from scipy import signal as sp_signal
 
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, pyqtProperty, QTimer
 from wefax_station.dsp.engine import WefaxSignalAndImageEngine
@@ -40,6 +41,13 @@ class DspBridge(QObject):
         self._engine = WefaxSignalAndImageEngine(sample_rate=sample_rate)
         self._sample_rate = sample_rate
         self._lock = threading.Lock()
+        # Référence vers RadioBridge pour alimenter l'AGC-RF en métriques DSP
+        self._radio_bridge = None
+
+        # Filtre passe-bande WEFAX optionnel (1400–2400 Hz)
+        # Appliqué avant analyse et démodulation pour supprimer le bruit hors-bande
+        self._wefax_filter_enabled: bool = False
+        self._build_wefax_filter(sample_rate)
 
         # Buffer circulaire audio partagé entre le callback sounddevice et pollAudio()
         self._ring: np.ndarray = np.zeros(sample_rate * 2, dtype=np.float32)
@@ -74,6 +82,9 @@ class DspBridge(QObject):
 
     def feed_audio(self, chunk: np.ndarray) -> None:
         """Appelé depuis le callback sounddevice (thread audio). Thread-safe."""
+        # Filtre passe-bande WEFAX appliqué ici, avant mise en buffer
+        # (hors du lock pour minimiser la durée de verrouillage)
+        chunk = self._apply_wefax_filter(chunk)
         with self._lock:
             n = len(chunk)
             ring_len = len(self._ring)
@@ -116,15 +127,21 @@ class DspBridge(QObject):
                     idx = np.linspace(0, len(s) - 1, 128).astype(int)
                     self.spectrumReady.emit(s[idx].tolist())
 
-                rms = float(result.get("rms", 0.0))
-                if abs(rms - self._level) > 0.01:
-                    self._level = rms
-                    self.signalLevelChanged.emit(rms)
+                rms_dbfs = float(result.get("rms_dbfs", -90.0))
+                # Normaliser dBFS [-90..0] → niveau linéaire [0..1] pour l'UI
+                rms_linear = max(0.0, min(1.0, (rms_dbfs + 90.0) / 90.0))
+                if abs(rms_linear - self._level) > 0.01:
+                    self._level = rms_linear
+                    self.signalLevelChanged.emit(rms_linear)
 
                 snr = float(result.get("snr_db", 0.0))
                 if abs(snr - self._snr) > 0.1:
                     self._snr = snr
                     self.snrChanged.emit(snr)
+
+                # Alimenter la boucle AGC-RF avec les métriques DSP réelles
+                if self._radio_bridge is not None:
+                    self._radio_bridge.update_audio_metrics(rms_dbfs, snr)
 
             sig = self._engine.assess_wefax_signal(chunk)
             if sig:
@@ -174,7 +191,54 @@ class DspBridge(QObject):
     def set_rtty_shift(self, shift_hz: int) -> None:
         self._rtty_shift_hz = shift_hz
 
+    # ---------------------------------------------------------------- filtre WEFAX passe-bande
+
+    def _build_wefax_filter(self, sample_rate: int) -> None:
+        """Construit le filtre Butterworth passe-bande WEFAX [1400–2400 Hz].
+
+        Plage choisie :
+          • 1500 Hz = tonalité noire (niveau référence, phasing, sync)
+          • 2300 Hz = tonalité blanche (niveau maximal)
+          • ± 100 Hz de garde → 1400–2400 Hz
+        Le filtre coupe tout le bruit hors de cette bande (QRM, QRN, 50/100 Hz,
+        bruit de fond HF) avant analyse et démodulation.
+        """
+        fs = max(8000, int(sample_rate))
+        nyq = 0.5 * fs
+        low  = 1400.0 / nyq
+        high = min(0.95, 2400.0 / nyq)
+        self._sos_wefax = sp_signal.butter(6, [low, high], btype="band", output="sos")
+        self._zi_wefax  = sp_signal.sosfilt_zi(self._sos_wefax) * 0.0
+
+    def _apply_wefax_filter(self, chunk: np.ndarray) -> np.ndarray:
+        """Applique le filtre passe-bande WEFAX si activé. Thread audio → utilise état zi persistant."""
+        if not self._wefax_filter_enabled:
+            return chunk
+        filtered, self._zi_wefax = sp_signal.sosfilt(
+            self._sos_wefax, chunk.astype(np.float64), zi=self._zi_wefax
+        )
+        return filtered.astype(np.float32)
+
+    @pyqtSlot(bool)
+    def setWefaxFilterEnabled(self, enabled: bool) -> None:
+        """Active ou désactive le filtre passe-bande WEFAX (slot QML)."""
+        self._wefax_filter_enabled = bool(enabled)
+        if not enabled:
+            # Réinitialiser l'état du filtre pour éviter les artefacts à la réactivation
+            self._zi_wefax = sp_signal.sosfilt_zi(self._sos_wefax) * 0.0
+
+    @pyqtProperty(bool)
+    def wefaxFilterEnabled(self) -> bool:
+        return self._wefax_filter_enabled
+
     # ---------------------------------------------------------------- accès brut (ponts internes)
+
+    def set_radio_bridge(self, radio_bridge) -> None:
+        """Câble RadioBridge pour alimenter sa boucle AGC-RF en métriques DSP.
+
+        Appelé par AppBridge après création des deux sous-ponts.
+        """
+        self._radio_bridge = radio_bridge
 
     @property
     def engine(self) -> WefaxSignalAndImageEngine:
