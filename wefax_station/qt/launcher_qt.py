@@ -40,6 +40,14 @@ def main() -> int:
     from PyQt6.QtCore    import QUrl, Qt
     from PyQt6.QtWidgets import QApplication
 
+    # Forcer le style Basic pour autoriser la personnalisation QML des contrôles
+    # (évite les warnings "does not support customization of this control")
+    try:
+        from PyQt6.QtQuickControls2 import QQuickStyle
+        QQuickStyle.setStyle("Basic")
+    except ImportError:
+        pass  # module optionnel selon la version PyQt6
+
     # QApplication plutôt que QGuiApplication pour les widgets Qt éventuels
     app_qt = QApplication.instance() or QApplication(sys.argv)
     app_qt.setApplicationName("Station WEFAX PRO")

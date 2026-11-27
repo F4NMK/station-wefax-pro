@@ -23,6 +23,7 @@ QtObject {
 
     // ── Texte ─────────────────────────────────────────────────────────────
     readonly property color textPrimary: "#e6edf3"
+    readonly property color textBase:    "#c8d8e8"   // alias pratique (entre primary et muted)
     readonly property color textMuted:   "#9fb0c2"
     readonly property color textDim:     "#64748b"
 
@@ -53,10 +54,11 @@ QtObject {
     readonly property int    fontSizeXl: 16
 
     // ── Métriques ─────────────────────────────────────────────────────────
-    readonly property int radiusSm: 4
-    readonly property int radiusMd: 6
-    readonly property int radiusLg: 10
-    readonly property int spacing:  8
+    readonly property int radiusSm:  4
+    readonly property int radiusMd:  6
+    readonly property int radiusLg:  10
+    readonly property int spacingSm: 4
+    readonly property int spacing:   8
     readonly property int spacingLg: 16
 
     // ── Bargraphes qualité (8 niveaux) ───────────────────────────────────
