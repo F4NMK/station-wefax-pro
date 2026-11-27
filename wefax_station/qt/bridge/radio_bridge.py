@@ -21,6 +21,9 @@ _DEFAULT_CIV_HEX = "A4"
 # Plage normalisée S-mètre IC-705 : 0–241
 _SMETER_MAX = 241.0
 
+# Protocoles supportés
+PROTOCOLS = ["ICOM CI-V", "YAESU CAT", "AUTO"]
+
 
 class RadioBridge(QObject):
     """Expose UnifiedRadioController au QML.
@@ -38,6 +41,14 @@ class RadioBridge(QObject):
     handshakeChanged = pyqtSignal(bool,  arguments=["ok"])
     smeterChanged    = pyqtSignal(float, arguments=["level"])
     logMessage       = pyqtSignal(str,   arguments=["text"])
+    # Signaux étendus
+    preampChanged    = pyqtSignal(int,   arguments=["level"])
+    attChanged       = pyqtSignal(bool,  arguments=["on"])
+    filterChanged    = pyqtSignal(int,   arguments=["filtNo"])
+    scanProgress     = pyqtSignal(str, float, arguments=["stationId", "snr"])  # scan en cours
+    scanCompleted    = pyqtSignal("QVariantList", arguments=["results"])        # résultats scan
+    portsRefreshed   = pyqtSignal("QVariantList", arguments=["ports"])          # liste ports COM
+    audioDevicesReady= pyqtSignal("QVariantList", arguments=["devices"])        # liste entrées audio
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -48,6 +59,11 @@ class RadioBridge(QObject):
         self._mode:      str   = ""
         self._handshake: bool  = False
         self._smeter:    float = 0.0
+        self._preamp:    int   = 1
+        self._att:       bool  = False
+        self._filter:    int   = 2
+        self._scan_results: list = []
+        self._scanning: bool = False
 
     # ---------------------------------------------------------------- Q_PROPERTY
 
@@ -80,7 +96,17 @@ class RadioBridge(QObject):
         self._handshake = ok
         self.handshakeChanged.emit(ok)
         if ok:
-            # Émet les valeurs initiales après connexion
+            self._emit_freq()
+            self._emit_mode()
+        return ok
+
+    @pyqtSlot(str, int, str, str, result=bool)
+    def connectFull(self, port: str, baud: int, protocol: str, civ_hex: str) -> bool:
+        """Connexion avec tous les paramètres configurables."""
+        ok = self._controller.connect(port, baud, protocol=protocol, civ_hex=civ_hex)
+        self._handshake = ok
+        self.handshakeChanged.emit(ok)
+        if ok:
             self._emit_freq()
             self._emit_mode()
         return ok
@@ -96,6 +122,142 @@ class RadioBridge(QObject):
     def setFrequency(self, hz: float) -> None:
         """Commande QSY vers `hz` hertz via set_wefax_frequency (garde-fou RX-safe inclus)."""
         self._controller.set_wefax_frequency(hz / 1000.0, apply_usb_offset=True)
+
+    @pyqtSlot(float)
+    def tuneStation(self, freq_khz: float) -> None:
+        """Accordage sur une station WEFAX (fréquence porteuse en kHz)."""
+        self._controller.set_wefax_frequency(freq_khz, apply_usb_offset=True)
+        self.logMessage.emit(f"QSY → {freq_khz:.1f} kHz (porteuse)")
+
+    @pyqtSlot(int)
+    def setPreamp(self, level: int) -> None:
+        """Préampli HF : 0=IPO, 1=PAMP1, 2=PAMP2 — garde-fou CI-V inclus."""
+        try:
+            self._controller.set_preamp(level)
+            self._preamp = level
+            self.preampChanged.emit(level)
+        except Exception as exc:
+            self.logMessage.emit(f"⚠️ Préampli : {exc}")
+
+    @pyqtSlot(bool)
+    def setAttenuator(self, on: bool) -> None:
+        """Atténuateur RF ±20 dB — garde-fou CI-V inclus."""
+        try:
+            self._controller.set_attenuator(on)
+            self._att = on
+            self.attChanged.emit(on)
+        except Exception as exc:
+            self.logMessage.emit(f"⚠️ Atténuateur : {exc}")
+
+    @pyqtSlot(int)
+    def setIFFilter(self, filt_no: int) -> None:
+        """Filtre FI IC-705 : 1=Large, 2=WEFAX optimal, 3=Étroit."""
+        try:
+            self._controller.set_if_filter(filt_no)
+            self._filter = filt_no
+            self.filterChanged.emit(filt_no)
+        except Exception as exc:
+            self.logMessage.emit(f"⚠️ Filtre FI : {exc}")
+
+    @pyqtSlot()
+    def refreshPorts(self) -> None:
+        """Rafraîchit la liste des ports série et émet portsRefreshed."""
+        try:
+            from wefax_station.deps import HAS_SERIAL, serial
+            if HAS_SERIAL:
+                ports = [p.device for p in serial.tools.list_ports.comports()]
+            else:
+                ports = ["COM14", "COM5", "COM3"]
+        except Exception:
+            ports = ["COM14"]
+        if not ports:
+            ports = ["COM14"]
+        self.portsRefreshed.emit(ports)
+
+    @pyqtSlot()
+    def refreshAudioDevices(self) -> None:
+        """Rafraîchit la liste des entrées audio et émet audioDevicesReady."""
+        devices = []
+        try:
+            import sounddevice as sd
+            for dev in sd.query_devices():
+                if dev.get("max_input_channels", 0) > 0:
+                    devices.append(dev.get("name", ""))
+        except Exception:
+            pass
+        if not devices:
+            devices = ["IC-705 USB Audio", "Microphone", "Line In"]
+        self.audioDevicesReady.emit(devices)
+
+    @pyqtSlot()
+    def autoDetect(self) -> None:
+        """Tente l'auto-détection IC-705 / Yaesu sur tous les ports disponibles."""
+        import threading
+        threading.Thread(target=self._run_autodetect, daemon=True).start()
+
+    def _run_autodetect(self) -> None:
+        self.logMessage.emit("▶ Auto-détection CAT + audio…")
+        try:
+            from wefax_station.deps import HAS_SERIAL, serial
+            ports = [p.device for p in serial.tools.list_ports.comports()] if HAS_SERIAL else []
+            for port in ports:
+                for baud in [19200, 9600, 4800]:
+                    try:
+                        ok = self._controller.connect(port, baud, protocol="AUTO", civ_hex=_DEFAULT_CIV_HEX)
+                        if ok:
+                            self._handshake = True
+                            self.handshakeChanged.emit(True)
+                            self.logMessage.emit(f"✅ IC-705 trouvé sur {port} @ {baud}")
+                            self._emit_freq()
+                            self._emit_mode()
+                            return
+                    except Exception:
+                        pass
+            self.logMessage.emit("⚠️ Aucun transceiver détecté automatiquement.")
+        except Exception as exc:
+            self.logMessage.emit(f"⚠️ Auto-détection échouée : {exc}")
+
+    @pyqtSlot()
+    def scanFrequencies(self) -> None:
+        """Lance le scan des 7 fréquences WEFAX et émet scanCompleted."""
+        if self._scanning:
+            return
+        import threading
+        threading.Thread(target=self._run_scan, daemon=True).start()
+
+    def _run_scan(self) -> None:
+        from wefax_station.core.stations import WEFAX_STATIONS
+        import time
+        self._scanning = True
+        self.logMessage.emit("▶ Scan des fréquences WEFAX…")
+        results = []
+        for sta in WEFAX_STATIONS:
+            try:
+                self.logMessage.emit(f"  → {sta['id']} {sta['freq']} kHz…")
+                self.scanProgress.emit(sta['id'], 0.0)
+                # QSY vers la station
+                self._controller.set_wefax_frequency(sta['freq'], apply_usb_offset=True)
+                time.sleep(1.5)
+                self._controller.poll_hardware_state()
+                raw = self._controller.s_meter_raw if self._controller.s_meter_valid else 0
+                snr = round(raw / 241.0 * 30.0, 1)  # approximation 0–30 dB
+                results.append({
+                    "id":      sta['id'],
+                    "station": sta['station'],
+                    "freq":    sta['freq'],
+                    "period":  sta['period'],
+                    "snr":     snr,
+                    "snrText": f"{snr:+.1f} dB",
+                })
+                self.scanProgress.emit(sta['id'], snr)
+            except Exception as exc:
+                results.append({"id": sta['id'], "station": sta['station'],
+                                 "freq": sta['freq'], "period": sta['period'],
+                                 "snr": -99.0, "snrText": "N/M"})
+        self._scan_results = results
+        self._scanning = False
+        self.scanCompleted.emit(results)
+        self.logMessage.emit("✅ Scan terminé.")
 
     @pyqtSlot()
     def pollStatus(self) -> None:
