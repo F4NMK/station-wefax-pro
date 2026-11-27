@@ -101,6 +101,12 @@ class AppBridge(QObject):
     weatherCalcResult = pyqtSignal(str,           arguments=["report"])
     webChartReady     = pyqtSignal(str, str,      arguments=["path", "label"])
 
+    # ── Signaux Bulletin desk ────────────────────────────────────────────────
+    bulletinDocsLoaded  = pyqtSignal("QVariantList", arguments=["docs"])
+    bulletinTextReady   = pyqtSignal(str,            arguments=["text"])
+    bulletinStatsReady  = pyqtSignal(str,            arguments=["text"])
+    bulletinSaved       = pyqtSignal(str,            arguments=["path"])
+
     # ────────────────────────────────────────────────────────────────────────
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -537,6 +543,228 @@ class AppBridge(QObject):
             return f"## {title}\n\n{body}"
         except Exception as exc:
             return f"⚠️ Erreur aide : {exc}"
+
+    # ── Slots QML : Bulletin desk ─────────────────────────────────────────────
+
+    @pyqtSlot(int, result="QVariantList")
+    def getBulletinDocs(self, hours: int = 24) -> list:
+        """Retourne la liste des documents reçus dans les N dernières heures.
+
+        Chaque élément : {id, kind, start_utc, station, freq_khz, status,
+                          reliability_pct, reliability_grade, product, files}
+        """
+        try:
+            from datetime import timedelta
+            import json as _json
+            workspace_dir = Path(self._prefs.get("workspace_dir",
+                                 Path.home() / "Documents" / "WEFAX"))
+            idx_path = workspace_dir / "index_receptions.json"
+            if not idx_path.exists():
+                return []
+            docs_raw = _json.loads(idx_path.read_text(encoding="utf-8")).get("documents", [])
+            now = datetime.now(timezone.utc)
+            out = []
+            for d in docs_raw:
+                try:
+                    start = datetime.fromisoformat(str(d.get("start_utc", "")).replace("Z", "+00:00"))
+                    if not start.tzinfo:
+                        start = start.replace(tzinfo=timezone.utc)
+                except ValueError:
+                    continue
+                if now - start > timedelta(hours=hours):
+                    continue
+                # Cherche le fichier record
+                rec_rel = d.get("record_rel_path", "")
+                rec = {}
+                if rec_rel:
+                    rec_p = workspace_dir / rec_rel
+                    try:
+                        rec = _json.loads(rec_p.read_text(encoding="utf-8"))
+                    except (OSError, ValueError):
+                        pass
+                q = rec.get("quality", {})
+                station = d.get("station", "?")
+                kind = ("Carte WEFAX" if d.get("category") == "cartes"
+                        else ("NAVTEX" if "NAVTEX" in station else "Bulletin RTTY"))
+                # Fichiers sources
+                file_paths = []
+                for s in rec.get("sources", []):
+                    rp = s.get("rel_path", "")
+                    if rp:
+                        file_paths.append(str(workspace_dir / rp))
+                for s in rec.get("derived", []):
+                    rp = s.get("rel_path", "")
+                    if rp:
+                        file_paths.append(str(workspace_dir / rp))
+                out.append({
+                    "id":               d.get("document_id", ""),
+                    "kind":             kind,
+                    "start_utc":        start.strftime("%d/%m %H:%M"),
+                    "station":          station,
+                    "freq_khz":         d.get("freq_khz", 0.0),
+                    "status":           d.get("status", ""),
+                    "reliability_pct":  q.get("reliability_pct"),
+                    "reliability_grade": q.get("reliability_grade", ""),
+                    "product":          q.get("product", ""),
+                    "files":            file_paths,
+                })
+            out.sort(key=lambda x: x["start_utc"], reverse=True)
+            return out
+        except Exception as exc:
+            self.journalLine.emit(f"⚠️ BulletinDocs : {exc}")
+            return []
+
+    @pyqtSlot("QVariantList", str)
+    def compileBulletin(self, included_ids: list, zone: str) -> None:
+        """Compile le bulletin météo depuis les documents sélectionnés.
+
+        Émet bulletinTextReady(texte) et bulletinStatsReady(stats).
+        """
+        import threading
+        threading.Thread(
+            target=self._run_compile_bulletin,
+            args=(list(included_ids), zone),
+            daemon=True,
+        ).start()
+
+    def _run_compile_bulletin(self, included_ids: list, zone: str) -> None:
+        try:
+            import json as _json
+            workspace_dir = Path(self._prefs.get("workspace_dir",
+                                 Path.home() / "Documents" / "WEFAX"))
+            # Recharge tous les docs
+            all_docs = {d["id"]: d for d in self.getBulletinDocs(72)}
+            docs = [all_docs[i] for i in included_ids if i in all_docs]
+            charts = [d for d in docs if d["kind"] == "Carte WEFAX"]
+            texts  = [d for d in docs if d["kind"] != "Carte WEFAX"]
+
+            now = datetime.now(timezone.utc)
+            callsign = self._prefs.get("operator_callsign", "").strip().upper()
+
+            L = [
+                f"BULLETIN MÉTÉO MARINE — {now:%d/%m/%Y %H:%M} UTC"
+                + (f" — {callsign}" if callsign else ""),
+                f"Zone d'analyse : {zone}" if zone else "Zone d'analyse : non spécifiée",
+                "=" * 72,
+                "",
+                "CE QU'IL FAUT RETENIR",
+                "",
+            ]
+
+            # Textes RTTY / NAVTEX
+            def _doc_body(doc):
+                txt_files = [f for f in doc["files"] if f.endswith("_original.txt")]
+                if not txt_files:
+                    return ""
+                try:
+                    text = Path(txt_files[0]).read_text(encoding="utf-8", errors="ignore")
+                    return text.split("=" * 78)[-1] if "=" * 78 in text else text
+                except OSError:
+                    return ""
+
+            if texts:
+                try:
+                    from wefax_station.weather.rtty_parse import parse_point_forecasts, gale_warnings
+                    from wefax_station.weather.plain_language import clean_raw
+                    combined = "\n".join(clean_raw(_doc_body(d)) for d in texts)
+                    if combined.strip():
+                        L.append("Synthèse des bulletins texte RTTY / NAVTEX :")
+                        L.append(combined[:3000])
+                except Exception:
+                    L.append("(Synthèse non disponible)")
+            else:
+                L.append("Aucun bulletin texte sélectionné.")
+
+            L += ["", "=" * 72, "A. CARTES WEFAX REÇUES", ""]
+            if charts:
+                for d in sorted(charts, key=lambda x: x["start_utc"]):
+                    rel = d["reliability_pct"]
+                    L.append(f"  • {d['start_utc']} UTC — {d['station']} "
+                              f"({float(d['freq_khz']):.1f} kHz) — fiabilité "
+                              f"{rel if rel is not None else '?'} % — {d['status']}")
+            else:
+                L.append("  Aucune carte sélectionnée.")
+
+            L += ["", "B. BULLETINS TEXTE REÇUS (RTTY / NAVTEX)", ""]
+            if texts:
+                for d in sorted(texts, key=lambda x: x["start_utc"]):
+                    rel = d["reliability_pct"]
+                    body = _doc_body(d)
+                    warnings_txt = ""
+                    try:
+                        from wefax_station.weather.rtty_parse import gale_warnings
+                        ws = gale_warnings(body, translate=True)
+                        if ws:
+                            warnings_txt = " ⚠ " + "; ".join(ws[:3])
+                    except Exception:
+                        pass
+                    L.append(f"  ▸ {d['start_utc']} UTC — {d['station']} "
+                              f"— fiabilité {'fiable' if (rel or 0) >= 70 else 'à vérifier'} "
+                              f"({rel if rel is not None else '?'} %){warnings_txt}")
+            else:
+                L.append("  Aucun bulletin texte sélectionné.")
+
+            L += ["", "C. OBSERVATIONS DE L'OPÉRATEUR", "",
+                  "  (Saisir ici les observations locales : pression, vent, ciel…)", ""]
+
+            L += [
+                "",
+                "Faits reçus et hypothèses de l'opérateur sont distingués.",
+                "Ce bulletin ne remplace pas les avis officiels (Météo-France, CROSS, NAVTEX).",
+            ]
+            self.bulletinTextReady.emit("\n".join(L))
+
+            # Statistiques
+            per: dict = {}
+            for d in self.getBulletinDocs(24):
+                s = per.setdefault(d["station"], {"cartes": 0, "textes": 0, "rel": [], "hours": []})
+                s["cartes" if d["kind"] == "Carte WEFAX" else "textes"] += 1
+                if d["reliability_pct"] is not None:
+                    s["rel"].append(d["reliability_pct"])
+                try:
+                    h = int(d["start_utc"].split(" ")[1].split(":")[0])
+                    s["hours"].append(h)
+                except Exception:
+                    pass
+            stat_lines = [
+                "RÉCEPTIONS DES DERNIÈRES 24 H PAR STATION",
+                "",
+                f"{'Station':<12}{'Cartes':>7}{'Textes':>7}{'Fiab. moy.':>12}  Heures UTC",
+                "-" * 70,
+            ]
+            for sid in sorted(per):
+                s = per[sid]
+                mean = (f"{sum(s['rel']) / len(s['rel']):.0f} %" if s["rel"] else "—")
+                hours = ",".join(f"{h:02d}" for h in sorted(set(s["hours"])))
+                stat_lines.append(f"{sid:<12}{s['cartes']:>7}{s['textes']:>7}{mean:>12}  {hours}")
+            if not per:
+                stat_lines.append("Aucune réception archivée sur 24 h.")
+            self.bulletinStatsReady.emit("\n".join(stat_lines))
+
+        except Exception as exc:
+            self.bulletinTextReady.emit(f"⚠️ Compilation impossible : {exc}")
+
+    @pyqtSlot(str, str)
+    def saveBulletinText(self, text: str, zone: str) -> None:
+        """Sauvegarde le texte du bulletin dans le dossier de travail.
+
+        Émet bulletinSaved(path) ou journalLine avec l'erreur.
+        """
+        try:
+            callsign = self._prefs.get("operator_callsign", "").strip().upper()
+            ts   = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
+            name = f"BULLETIN_METEO{'_' + callsign if callsign else ''}_{ts}Z.txt"
+            workspace_dir = Path(self._prefs.get("workspace_dir",
+                                 Path.home() / "Documents" / "WEFAX"))
+            dest_dir = workspace_dir / "mes_bulletins"
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest = dest_dir / name
+            dest.write_text(text + "\n", encoding="utf-8")
+            self.bulletinSaved.emit(str(dest))
+            self.journalLine.emit(f"📝 Bulletin enregistré : {name}")
+            self.statusChanged.emit(f"Bulletin enregistré : {name}")
+        except Exception as exc:
+            self.journalLine.emit(f"⚠️ Sauvegarde bulletin : {exc}")
 
     # ── Slots QML : RTTY / log ───────────────────────────────────────────────
 

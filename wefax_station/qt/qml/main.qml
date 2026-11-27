@@ -15,14 +15,15 @@ import "." as T
  *   appBridge : AppBridge
  *
  * Onglets :
- *   0  RADIO   — contrôle IC-705, scan, RF
- *   1  IMAGE   — WEFAX décodage + DSP
- *   2  RTTY    — téléimprimeur RTTY / NAVTEX
- *   3  MÉTÉO   — synoptique + bulletins + analyse physique
- *   4  PLAN    — programme émissions UTC
- *   5  WINLINK — session Winlink/VARA, envoi images, GRIB
+ *   0  RADIO    — contrôle IC-705, scan, RF
+ *   1  IMAGE    — WEFAX décodage + DSP
+ *   2  RTTY     — téléimprimeur RTTY / NAVTEX
+ *   3  MÉTÉO    — synoptique + bulletins + analyse physique
+ *   4  PLAN     — programme émissions UTC
+ *   5  WINLINK  — session Winlink/VARA, envoi images, GRIB
  *   6  ARCHIVES — historique cartes reçues, export signé
- *   7  CONFIG  — paramètres + switch UI
+ *   7  BULLETIN — poste météo & bulletin opérateur
+ *   8  CONFIG   — paramètres + switch UI
  */
 ApplicationWindow {
     id:            mainWindow
@@ -59,7 +60,7 @@ ApplicationWindow {
         C.TabBar {
             id: mainTabBar
             Layout.fillWidth: true
-            model: ["📡 RADIO", "🖼 IMAGE", "🔤 RTTY", "🌦 MÉTÉO", "📅 PLAN", "🌐 WINLINK", "🗂 ARCHIVES", "⚙ CONFIG"]
+            model: ["📡 RADIO", "🖼 IMAGE", "🔤 RTTY", "🌦 MÉTÉO", "📅 PLAN", "🌐 WINLINK", "🗂 ARCHIVES", "📋 BULLETIN", "⚙ CONFIG"]
             currentIndex: mainWindow.currentTab
             onTabSelected: (idx) => mainWindow.currentTab = idx
 
@@ -78,14 +79,15 @@ ApplicationWindow {
             clip: true
             currentIndex: mainWindow.currentTab
 
-            RadioPanel    { id: radioPanel    }
-            ImagePanel    { id: imagePanel    }
-            RttyPanel     { id: rttyPanel     }
-            MeteoPanel    { id: meteoPanel    }
-            PlanPanel     { id: planPanel     }
-            WinlinkPanel  { id: winlinkPanel  }
-            ArchivesPanel { id: archivesPanel }
-            SettingsPanel { id: settingsPanel }
+            RadioPanel        { id: radioPanel        }
+            ImagePanel        { id: imagePanel        }
+            RttyPanel         { id: rttyPanel         }
+            MeteoPanel        { id: meteoPanel        }
+            PlanPanel         { id: planPanel         }
+            WinlinkPanel      { id: winlinkPanel      }
+            ArchivesPanel     { id: archivesPanel     }
+            BulletinDeskPanel { id: bulletinDeskPanel }
+            SettingsPanel     { id: settingsPanel     }
         }
 
         // ── Barre de statut ───────────────────────────────────────────────
@@ -128,6 +130,9 @@ ApplicationWindow {
     }
     Shortcut {
         sequence: "Ctrl+8"; onActivated: mainWindow.currentTab = 7
+    }
+    Shortcut {
+        sequence: "Ctrl+9"; onActivated: mainWindow.currentTab = 8
     }
     Shortcut {
         sequence: "Ctrl+Q"
