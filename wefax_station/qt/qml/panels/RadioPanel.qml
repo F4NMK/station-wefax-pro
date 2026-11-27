@@ -10,7 +10,7 @@ import ".." as T
  * Context properties attendus :
  *   radio  : RadioBridge  (signaux freqChanged, modeChanged, handshakeChanged, smeterChanged, logMessage,
  *                           preampChanged, attChanged, filterChanged, scanProgress, scanCompleted,
- *                           portsRefreshed, audioDevicesReady)
+ *                           portsRefreshed, audioDevicesReady, rfGainChanged, agcRfStatusChanged)
  *   appBridge : AppBridge
  */
 Rectangle {
@@ -26,6 +26,15 @@ Rectangle {
     property bool   att:        false
     property int    ifFilter:   2
     property bool   scanning:   false
+
+    // AGC-RF
+    property bool   agcRfOn:    false     // AGC-RF activé
+    property int    rfGainRaw:  255       // valeur CI-V 0–255
+    property int    rfGainPct:  100       // en % pour la jauge
+    property string agcRfStatus: ""      // dernier message AGC-RF
+
+    // Filtre passe-bande WEFAX
+    property bool   wefaxFilterOn: false  // filtre 1400–2400 Hz activé
 
     // Listes dynamiques
     property var portsList:    ["COM14", "COM5", "COM3"]
@@ -61,6 +70,12 @@ Rectangle {
         }
         function onPortsRefreshed(ports)  { root.portsList = ports }
         function onAudioDevicesReady(devs) { root.audioDevList = devs }
+        // AGC-RF
+        function onRfGainChanged(value) {
+            root.rfGainRaw = value
+            root.rfGainPct = Math.round(value * 100 / 255)
+        }
+        function onAgcRfStatusChanged(msg) { root.agcRfStatus = msg }
     }
 
     // ── Initialisation ───────────────────────────────────────────────────────
@@ -365,6 +380,198 @@ Rectangle {
                             Layout.fillWidth: true
                             onClicked: radio.setAttenuator(!root.att)
                         }
+                    }
+                }
+            }
+
+            // ── Section : AGC-RF (boucle de contre-réaction gain RF) ─────
+            Rectangle {
+                Layout.fillWidth: true
+                color: T.Theme.bgPanel
+                radius: T.Theme.radiusMd
+                border.color: T.Theme.border
+                height: agcColLayout.implicitHeight + 16
+
+                ColumnLayout {
+                    id: agcColLayout
+                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: 8 }
+                    spacing: 6
+
+                    // En-tête + toggle
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "AGC-RF LOGICIEL"
+                            color: T.Theme.textDim
+                            font.family: T.Theme.fontMono
+                            font.pixelSize: T.Theme.fontSizeXs
+                            font.letterSpacing: 1
+                        }
+                        Item { Layout.fillWidth: true }
+                        C.FlatButton {
+                            id: agcToggle
+                            text:   root.agcRfOn ? "AGC ON" : "AGC OFF"
+                            accent: root.agcRfOn
+                            implicitWidth: 76
+                            onClicked: {
+                                root.agcRfOn = !root.agcRfOn
+                                radio.setAgcRfEnabled(root.agcRfOn)
+                            }
+                        }
+                    }
+
+                    // Jauge gain RF courant
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "Gain RF :"
+                            color: T.Theme.textMuted
+                            font.family: T.Theme.fontMono
+                            font.pixelSize: T.Theme.fontSizeSm
+                            Layout.preferredWidth: 60
+                        }
+                        // Barre de progression gain RF
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 8
+                            radius: 4
+                            color: T.Theme.bgSurface
+                            clip: true
+                            Rectangle {
+                                width: parent.width * (root.rfGainPct / 100)
+                                height: parent.height
+                                radius: parent.radius
+                                color: root.rfGainPct > 70 ? T.Theme.accent
+                                     : root.rfGainPct > 40 ? T.Theme.warnFg
+                                     : T.Theme.errFg
+                                Behavior on width { NumberAnimation { duration: 300 } }
+                            }
+                        }
+                        Text {
+                            text: root.rfGainPct + " %"
+                            color: T.Theme.textBase
+                            font.family: T.Theme.fontMono
+                            font.pixelSize: T.Theme.fontSizeSm
+                            Layout.preferredWidth: 42
+                            horizontalAlignment: Text.AlignRight
+                        }
+                    }
+
+                    // Curseur réglage manuel (désactive l'AGC-RF 15 min)
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Text {
+                            text: "Manuel :"
+                            color: T.Theme.textMuted
+                            font.family: T.Theme.fontMono
+                            font.pixelSize: T.Theme.fontSizeSm
+                            Layout.preferredWidth: 60
+                        }
+                        // Curseur gain RF manuel
+                        Item {
+                            id: rfGainSlider
+                            Layout.fillWidth: true
+                            implicitHeight: 20
+                            property int minV: 64    // 25 % — garde-fou absolu
+                            property int maxV: 255
+                            property int gainV: root.rfGainRaw
+                            property real visualPos: (gainV - minV) / (maxV - minV)
+                            // Track fond
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: 0; width: parent.width; height: 4; radius: 2
+                                color: T.Theme.bgSurface
+                                Rectangle {
+                                    width: parent.width * rfGainSlider.visualPos
+                                    height: parent.height; radius: parent.radius
+                                    color: T.Theme.accent
+                                }
+                            }
+                            // Poignée
+                            Rectangle {
+                                anchors.verticalCenter: parent.verticalCenter
+                                x: rfGainSlider.visualPos * (rfGainSlider.width - width)
+                                width: 14; height: 14; radius: 7
+                                color: T.Theme.accent
+                                border.color: T.Theme.bgRoot; border.width: 2
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                function applyGain(mx) {
+                                    const frac = Math.max(0, Math.min(1, mx / rfGainSlider.width))
+                                    const v = Math.round(rfGainSlider.minV
+                                                + frac * (rfGainSlider.maxV - rfGainSlider.minV))
+                                    root.rfGainRaw = v
+                                    radio.setRfGain(v)
+                                }
+                                onClicked: (mouse) => applyGain(mouse.x)
+                                onPositionChanged: (mouse) => { if (pressed) applyGain(mouse.x) }
+                            }
+                        }
+                    }
+
+                    // Message de statut AGC-RF
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.agcRfStatus || "—"
+                        color: T.Theme.textDim
+                        font.family: T.Theme.fontMono
+                        font.pixelSize: T.Theme.fontSizeXs
+                        elide: Text.ElideRight
+                        wrapMode: Text.NoWrap
+                    }
+                }
+            }
+
+            // ── Section : Filtre passe-bande WEFAX (1400–2400 Hz) ────────
+            Rectangle {
+                Layout.fillWidth: true
+                color: T.Theme.bgPanel
+                radius: T.Theme.radiusMd
+                border.color: root.wefaxFilterOn ? T.Theme.accent : T.Theme.border
+                height: filterCol.implicitHeight + T.Theme.spacing * 2
+
+                ColumnLayout {
+                    id: filterCol
+                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: T.Theme.spacing }
+                    spacing: T.Theme.spacingSm
+
+                    // Titre + toggle
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: T.Theme.spacing
+
+                        Text {
+                            text: "FILTRE BP WEFAX"
+                            color: T.Theme.textDim
+                            font.family: T.Theme.fontMono
+                            font.pixelSize: T.Theme.fontSizeXs
+                            font.letterSpacing: 1
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        // Toggle ON/OFF filtre
+                        C.FlatButton {
+                            text:   root.wefaxFilterOn ? "🔇 ON 1400–2400 Hz" : "DÉSACTIVÉ"
+                            accent: root.wefaxFilterOn
+                            onClicked: {
+                                root.wefaxFilterOn = !root.wefaxFilterOn
+                                dsp.setWefaxFilterEnabled(root.wefaxFilterOn)
+                            }
+                        }
+                    }
+
+                    // Description courte
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.wefaxFilterOn
+                            ? "✅ Filtre actif — bruit hors-bande supprimé (1400–2400 Hz)"
+                            : "Butterworth 6ème ordre — coupe le bruit HF hors de la bande WEFAX"
+                        color: root.wefaxFilterOn ? T.Theme.accent : T.Theme.textDim
+                        font.family: T.Theme.fontMono
+                        font.pixelSize: T.Theme.fontSizeXs
+                        wrapMode: Text.WordWrap
                     }
                 }
             }

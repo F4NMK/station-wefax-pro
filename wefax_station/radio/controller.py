@@ -60,6 +60,7 @@ class _UnifiedRadioControllerBase:
         self.s_meter_label = "S8"
         self.s_meter_dbm = -79.0
         self.ovf_active = False
+        self.actual_rf_gain = 255           # gain RF courant (0–255) ; 255 = maximal
         self.last_auto_rf_action_ts = 0.0
         self.param_status = {}
         self.tx_guard_enabled = True
@@ -598,6 +599,54 @@ class _UnifiedRadioControllerBase:
         self.actual_preamp = level
         return self.actual_preamp
 
+    def set_rf_gain(self, value: int) -> int:
+        """Règle le gain RF de l'IC-705 (CI-V 0x14 0x02, plage 0–255).
+
+        Utilisé par la boucle AGC-RF (auto_rf_gain.py) pour réduire le bruit
+        d'intermodulation sans dégrader le SNR.
+
+        La commande n'est JAMAIS émise si la radio est en émission (garde-fou _ensure_rx_safe).
+        Renvoie la valeur effective appliquée (relue depuis le matériel si possible).
+        """
+        value = max(0, min(255, int(value)))
+        if not self.port_open:
+            self.actual_rf_gain = value
+            self.log(f"ℹ️ [SIMU] Gain RF réglé sur {value} ({value*100//255} %)")
+            return value
+
+        if "ICOM" in self.protocol:
+            # CI-V 0x14 0x02 : RF gain. Encodage BCD 0000–0255 (2 octets BCD)
+            # 0x14 0x02 set : FE FE ADDR E0 14 02 bcd_hi bcd_lo FD
+            bcd_hi = int(f"{value:04d}"[:2])  # ex: value=200 → "0200" → "02" → 2
+            bcd_lo = int(f"{value:04d}"[2:])  # ex: value=200 → "0200" → "00" → 0
+            rep_set = self._civ_transaction([0x14, 0x02, bcd_hi, bcd_lo])
+            time.sleep(0.03)
+            # relecture de confirmation (0x14 0x02 sans paramètre)
+            rep_read = self._civ_transaction([0x14, 0x02])
+            if rep_read and len(rep_read) >= 4 and rep_read[0] == 0x14 and rep_read[1] == 0x02:
+                read_val = int(f"{rep_read[2]:02d}{rep_read[3]:02d}")
+                self.actual_rf_gain = read_val
+                self.log(f"🔄 [AGC-RF IC-705] Gain demandé={value} → lu={read_val} "
+                         f"({read_val*100//255} %)")
+                return read_val
+            elif rep_set == [0xFB]:
+                self.actual_rf_gain = value
+                self.log(f"✅ [AGC-RF IC-705] Gain RF={value} ({value*100//255} %) confirmé")
+            return self.actual_rf_gain
+
+        # Yaesu CAT ASCII : commande RG (RF Gain), valeur 0–255
+        elif "YAESU CAT ASCII" in self.protocol:
+            self._yaesu_ascii_cmd(f"RG{value:03d};", read_reply=False)
+            resp = self._yaesu_ascii_cmd("RG;", read_reply=True)
+            if len(resp) >= 5 and resp.startswith("RG") and resp[2:5].isdigit():
+                self.actual_rf_gain = int(resp[2:5])
+            else:
+                self.actual_rf_gain = value
+            return self.actual_rf_gain
+
+        self.actual_rf_gain = value
+        return value
+
     # ------------------------------------------------------------ veille spectrale (2.8.9)
     def _scope_cmd(self, cmd, timeout=0.35):
         """Commande 27 xx : renvoie la charge de la réponse qui lui correspond (27 xx …), ou FB / FA.
@@ -769,6 +818,15 @@ class _UnifiedRadioControllerBase:
             rep_a = self._civ_transaction([0x11])
             if rep_a and len(rep_a) >= 2 and rep_a[0] == 0x11:
                 self.actual_att = rep_a[1] > 0
+
+            # Lecture gain RF (0x14 0x02) — sert à l'AGC-RF pour détecter les modifications manuelles
+            rep_rg = self._civ_transaction([0x14, 0x02])
+            if rep_rg and len(rep_rg) >= 4 and rep_rg[0] == 0x14 and rep_rg[1] == 0x02:
+                try:
+                    self.actual_rf_gain = int(f"{rep_rg[2]:02d}{rep_rg[3]:02d}")
+                except (ValueError, IndexError):
+                    pass
+
             return True
 
         elif "YAESU CAT ASCII" in self.protocol:

@@ -9,8 +9,10 @@ Règle : ce fichier n'importe jamais tkinter.
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, pyqtProperty
+import time
+from PyQt6.QtCore import QObject, QTimer, pyqtSignal, pyqtSlot, pyqtProperty
 from wefax_station.radio.controller import UnifiedRadioController
+from wefax_station.radio.auto_rf_gain import AutoRFGain
 
 # Paramètres IC-705 par défaut (port surchargeable depuis QML)
 _DEFAULT_PORT    = "COM14"
@@ -49,6 +51,9 @@ class RadioBridge(QObject):
     scanCompleted    = pyqtSignal("QVariantList", arguments=["results"])        # résultats scan
     portsRefreshed   = pyqtSignal("QVariantList", arguments=["ports"])          # liste ports COM
     audioDevicesReady= pyqtSignal("QVariantList", arguments=["devices"])        # liste entrées audio
+    # AGC-RF
+    rfGainChanged    = pyqtSignal(int,  arguments=["value"])     # valeur CI-V 0–255
+    agcRfStatusChanged = pyqtSignal(str, arguments=["msg"])      # dernier message de l'AGC-RF
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -64,6 +69,15 @@ class RadioBridge(QObject):
         self._filter:    int   = 2
         self._scan_results: list = []
         self._scanning: bool = False
+        # AGC-RF — boucle de contre-réaction gain RF
+        self._agc_rf = AutoRFGain()
+        self._agc_rf_rms:  float | None = None   # dernier RMS audio reçu (dBFS)
+        self._agc_rf_snr:  float | None = None   # dernier SNR reçu (dB)
+        # Timer AGC-RF : tick toutes les 2 s
+        self._agc_rf_timer = QTimer()
+        self._agc_rf_timer.setInterval(2000)
+        self._agc_rf_timer.timeout.connect(self._agc_rf_tick)
+        self._agc_rf_timer.start()
 
     # ---------------------------------------------------------------- Q_PROPERTY
 
@@ -269,8 +283,79 @@ class RadioBridge(QObject):
             self._emit_freq()
             self._emit_mode()
             self._emit_smeter()
+            self._emit_rf_gain()
         except Exception:
             pass
+
+    # ---------------------------------------------------------------- AGC-RF
+
+    @pyqtSlot(bool)
+    def setAgcRfEnabled(self, enabled: bool) -> None:
+        """Active ou désactive la boucle AGC-RF depuis l'UI."""
+        self._agc_rf.enabled = enabled
+        state = "activé" if enabled else "désactivé"
+        self.agcRfStatusChanged.emit(f"AGC-RF {state}")
+        self.logMessage.emit(f"ℹ️ AGC-RF {state}")
+
+    @pyqtSlot(int)
+    def setRfGain(self, value: int) -> None:
+        """Réglage manuel du gain RF (0–255) depuis l'UI — suspend l'AGC-RF 15 min."""
+        value = max(0, min(255, int(value)))
+        now = time.monotonic()
+        self._agc_rf.notify_manual_change(now, value)
+        try:
+            self._controller.set_rf_gain(value)
+            self.rfGainChanged.emit(value)
+        except Exception as exc:
+            self.logMessage.emit(f"⚠️ Gain RF : {exc}")
+
+    @pyqtSlot(float)
+    def setAgcRfTarget(self, target_dbfs: float) -> None:
+        """Ajuste le niveau RMS cible de l'AGC-RF (dBFS) depuis l'UI."""
+        self._agc_rf.target_dbfs = float(target_dbfs)
+        self.logMessage.emit(f"ℹ️ AGC-RF cible → {target_dbfs:+.1f} dBFS")
+
+    @pyqtProperty(bool)
+    def agcRfEnabled(self) -> bool:
+        return self._agc_rf.enabled
+
+    @pyqtProperty(int)
+    def rfGain(self) -> int:
+        return self._agc_rf.current_gain
+
+    @pyqtProperty(int)
+    def rfGainPct(self) -> int:
+        return self._agc_rf.current_gain_pct
+
+    def update_audio_metrics(self, rms_dbfs: float | None, snr_db: float | None) -> None:
+        """Appelé par DspBridge (ou tout autre pont DSP) à chaque bloc audio analysé.
+
+        Met à jour les métriques DSP utilisées par la boucle AGC-RF pour sa décision.
+        Cette méthode est thread-safe car elle ne fait que stocker des floats.
+        """
+        self._agc_rf_rms = rms_dbfs
+        self._agc_rf_snr = snr_db
+
+    def _agc_rf_tick(self) -> None:
+        """Tick AGC-RF toutes les 2 s — appelé par QTimer dans le thread Qt."""
+        now = time.monotonic()
+        actual_gain = getattr(self._controller, "actual_rf_gain", 255)
+        new_gain = self._agc_rf.step(
+            now,
+            rms_dbfs=self._agc_rf_rms,
+            snr_db=self._agc_rf_snr,
+            actual_gain=actual_gain,
+        )
+        if new_gain is not None:
+            try:
+                self._controller.set_rf_gain(new_gain)
+                self.rfGainChanged.emit(new_gain)
+                # émettre le dernier message journalisé
+                evts = self._agc_rf.events
+                if evts:
+                    self.agcRfStatusChanged.emit(evts[-1][1])
+            except Exception as exc:
+                self.logMessage.emit(f"⚠️ AGC-RF tick : {exc}")
 
     # ---------------------------------------------------------------- internes
 
@@ -293,6 +378,14 @@ class RadioBridge(QObject):
         if abs(level - self._smeter) > 0.01:
             self._smeter = level
             self.smeterChanged.emit(level)
+
+    def _emit_rf_gain(self) -> None:
+        """Émet rfGainChanged si le gain RF a changé (p. ex. modification manuelle sur le rig)."""
+        actual = getattr(self._controller, "actual_rf_gain", 255)
+        if actual != self._agc_rf.current_gain:
+            # Modification externe détectée → notifier l'AGC-RF
+            self._agc_rf.notify_manual_change(time.monotonic(), actual)
+            self.rfGainChanged.emit(actual)
 
     # ---------------------------------------------------------------- accès brut (ponts internes)
 
