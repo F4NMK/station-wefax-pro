@@ -3,7 +3,6 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import QtQuick.Window
 import "components" as C
-import "components"
 import "panels"
 import "." as T
 
@@ -53,56 +52,62 @@ ApplicationWindow {
     }
 
     // ── Layout principal ─────────────────────────────────────────────────────
-    ColumnLayout {
+    // Utilisation de Item + ColumnLayout en contentItem pour éviter le bug
+    // de débordement à droite avec ApplicationWindow + anchors.fill direct
+    Item {
         anchors.fill: parent
-        spacing: 0
 
-        // ── Barre d'onglets ───────────────────────────────────────────────
-        C.TabBar {
-            id: mainTabBar
-            Layout.fillWidth: true
-            model: ["📡 RADIO", "🖼 IMAGE", "🔤 RTTY", "🌦 MÉTÉO", "📅 PLAN", "🌐 WINLINK", "🗂 ARCHIVES", "📋 BULLETIN", "⚙ CONFIG"]
-            currentIndex: mainWindow.currentTab
-            onTabSelected: (idx) => mainWindow.currentTab = idx
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 0
 
-            bgColor:      T.Theme.bgPanel
-            borderColor:  T.Theme.border
-            accentColor:  T.Theme.accent
-            textActive:   T.Theme.textPrimary
-            textInactive: T.Theme.textDim
-        }
+            // ── Barre d'onglets ───────────────────────────────────────────────
+            C.TabBar {
+                id: mainTabBar
+                Layout.fillWidth: true
+                model: ["📡 RADIO", "🖼 IMAGE", "🔤 RTTY", "🌦 MÉTÉO", "📅 PLAN", "🌐 WINLINK", "🗂 ARCHIVES", "📋 BULLETIN", "⚙ CONFIG"]
+                currentIndex: mainWindow.currentTab
+                onTabSelected: (idx) => mainWindow.currentTab = idx
 
-        // ── Contenu ───────────────────────────────────────────────────────
-        StackLayout {
-            id: contentStack
-            Layout.fillWidth:  true
-            Layout.fillHeight: true
-            clip: true
-            currentIndex: mainWindow.currentTab
+                bgColor:      T.Theme.bgPanel
+                borderColor:  T.Theme.border
+                accentColor:  T.Theme.accent
+                textActive:   T.Theme.textPrimary
+                textInactive: T.Theme.textDim
+            }
 
-            RadioPanel        { id: radioPanel        }
-            ImagePanel        { id: imagePanel        }
-            RttyPanel         { id: rttyPanel         }
-            MeteoPanel        { id: meteoPanel        }
-            PlanPanel         { id: planPanel         }
-            WinlinkPanel      { id: winlinkPanel      }
-            ArchivesPanel     { id: archivesPanel     }
-            BulletinDeskPanel { id: bulletinDeskPanel }
-            SettingsPanel     { id: settingsPanel     }
-        }
+            // ── Contenu ───────────────────────────────────────────────────────
+            StackLayout {
+                id: contentStack
+                Layout.fillWidth:  true
+                Layout.fillHeight: true
+                clip: true
+                currentIndex: mainWindow.currentTab
 
-        // ── Barre de statut ───────────────────────────────────────────────
-        C.StatusBar {
-            Layout.fillWidth: true
-            statusText:     mainWindow.appStatus
-            modeText:       mainWindow.currentMode
-            mode:           mainWindow.currentMode
-            audioConnected: mainWindow.audioOk
+                RadioPanel        { id: radioPanel        }
+                ImagePanel        { id: imagePanel        }
+                RttyPanel         { id: rttyPanel         }
+                MeteoPanel        { id: meteoPanel        }
+                PlanPanel         { id: planPanel         }
+                WinlinkPanel      { id: winlinkPanel      }
+                ArchivesPanel     { id: archivesPanel     }
+                BulletinDeskPanel { id: bulletinDeskPanel }
+                SettingsPanel     { id: settingsPanel     }
+            }
+
+            // ── Barre de statut ───────────────────────────────────────────────
+            C.StatusBar {
+                Layout.fillWidth: true
+                statusText:     mainWindow.appStatus
+                modeText:       mainWindow.currentMode
+                mode:           mainWindow.currentMode
+                audioConnected: mainWindow.audioOk
+            }
         }
     }
 
     // ── Aide intégrée (F1) ───────────────────────────────────────────────────
-    HelpDialog {
+    C.HelpDialog {
         id: helpDialog
     }
 
@@ -113,41 +118,17 @@ ApplicationWindow {
     }
 
     // ── Raccourcis clavier ───────────────────────────────────────────────────
-    Shortcut {
-        sequence: "Ctrl+1"; onActivated: mainWindow.currentTab = 0
-    }
-    Shortcut {
-        sequence: "Ctrl+2"; onActivated: mainWindow.currentTab = 1
-    }
-    Shortcut {
-        sequence: "Ctrl+3"; onActivated: mainWindow.currentTab = 2
-    }
-    Shortcut {
-        sequence: "Ctrl+4"; onActivated: mainWindow.currentTab = 3
-    }
-    Shortcut {
-        sequence: "Ctrl+5"; onActivated: mainWindow.currentTab = 4
-    }
-    Shortcut {
-        sequence: "Ctrl+6"; onActivated: mainWindow.currentTab = 5
-    }
-    Shortcut {
-        sequence: "Ctrl+7"; onActivated: mainWindow.currentTab = 6
-    }
-    Shortcut {
-        sequence: "Ctrl+8"; onActivated: mainWindow.currentTab = 7
-    }
-    Shortcut {
-        sequence: "Ctrl+9"; onActivated: mainWindow.currentTab = 8
-    }
-    Shortcut {
-        sequence: "F1"
-        onActivated: helpDialog.openTopic("")
-    }
-    Shortcut {
-        sequence: "Ctrl+Q"
-        onActivated: appBridge.requestClose()
-    }
+    Shortcut { sequence: "Ctrl+1"; onActivated: mainWindow.currentTab = 0 }
+    Shortcut { sequence: "Ctrl+2"; onActivated: mainWindow.currentTab = 1 }
+    Shortcut { sequence: "Ctrl+3"; onActivated: mainWindow.currentTab = 2 }
+    Shortcut { sequence: "Ctrl+4"; onActivated: mainWindow.currentTab = 3 }
+    Shortcut { sequence: "Ctrl+5"; onActivated: mainWindow.currentTab = 4 }
+    Shortcut { sequence: "Ctrl+6"; onActivated: mainWindow.currentTab = 5 }
+    Shortcut { sequence: "Ctrl+7"; onActivated: mainWindow.currentTab = 6 }
+    Shortcut { sequence: "Ctrl+8"; onActivated: mainWindow.currentTab = 7 }
+    Shortcut { sequence: "Ctrl+9"; onActivated: mainWindow.currentTab = 8 }
+    Shortcut { sequence: "F1";     onActivated: helpDialog.openTopic("") }
+    Shortcut { sequence: "Ctrl+Q"; onActivated: appBridge.requestClose() }
 
     // ── Initialisation ───────────────────────────────────────────────────────
     Component.onCompleted: {

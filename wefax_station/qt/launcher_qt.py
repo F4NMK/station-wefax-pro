@@ -27,6 +27,10 @@ def _setup_qt_env() -> None:
     """Variables d'environnement nécessaires avant import PyQt6."""
     # Évite les avertissements MESA / libGL sur Linux sans GPU
     os.environ.setdefault("QT_XCB_NO_MITSHM", "1")
+    # Forcer le style Basic AVANT tout import Qt pour permettre la
+    # personnalisation QML (background, contentItem, indicator…)
+    # QT_QUICK_CONTROLS_STYLE doit être positionné avant QApplication
+    os.environ.setdefault("QT_QUICK_CONTROLS_STYLE", "Basic")
     # Rendu logiciel de secours si pas de GPU
     # os.environ.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
 
@@ -39,14 +43,6 @@ def main() -> int:
     from PyQt6.QtQml     import QQmlApplicationEngine
     from PyQt6.QtCore    import QUrl, Qt
     from PyQt6.QtWidgets import QApplication
-
-    # Forcer le style Basic pour autoriser la personnalisation QML des contrôles
-    # (évite les warnings "does not support customization of this control")
-    try:
-        from PyQt6.QtQuickControls2 import QQuickStyle
-        QQuickStyle.setStyle("Basic")
-    except ImportError:
-        pass  # module optionnel selon la version PyQt6
 
     # QApplication plutôt que QGuiApplication pour les widgets Qt éventuels
     app_qt = QApplication.instance() or QApplication(sys.argv)

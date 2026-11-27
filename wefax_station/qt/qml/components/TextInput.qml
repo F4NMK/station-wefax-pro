@@ -2,27 +2,31 @@ import QtQuick
 import ".." as T
 
 /*
- * TextInput.qml — Champ de saisie texte personnalisé
+ * TextInput.qml — Champ de saisie texte entièrement en QML (pas de style natif)
  *
  * Propriétés :
- *   text          : string   — valeur courante
+ *   text          : string   — valeur courante (lecture/écriture)
  *   placeholder   : string   — texte fantôme si vide
  *   fontFamily    : string   — famille de police
  *   readOnly      : bool
  *   enabled       : bool (hérité)
  *
  * Signaux :
- *   textChanged(string text) — émis à chaque modification
+ *   textChanged(string text) — émis à chaque frappe, AVEC le texte courant
  *   accepted()               — émis à l'appui de Entrée
+ *
+ * Usage :
+ *   C.TextInput { text: root.gateway; onTextChanged: (t) => root.gateway = t }
  */
 Rectangle {
     id: root
 
-    property alias  text:        input.text
+    property string text:        ""
     property string placeholder: ""
     property string fontFamily:  T.Theme.fontBase
-    property alias  readOnly:    input.readOnly
+    property bool   readOnly:    false
 
+    signal textChanged(string text)
     signal accepted()
 
     implicitWidth:  100
@@ -34,6 +38,10 @@ Rectangle {
     clip:           true
 
     opacity: enabled ? 1.0 : 0.4
+
+    // Mise à jour du champ interne quand la propriété externe change
+    // (sans boucle : on ne met à jour que si différent)
+    onTextChanged: (t) => { if (input.text !== t) input.text = t }
 
     // Placeholder
     Text {
@@ -54,20 +62,29 @@ Rectangle {
             rightMargin:     8
             verticalCenter:  parent.verticalCenter
         }
+        text:            root.text
         color:           T.Theme.textPrimary
         font.family:     root.fontFamily
         font.pixelSize:  T.Theme.fontSizeSm
         selectByMouse:   true
+        readOnly:        root.readOnly
         enabled:         root.enabled
 
-        onTextChanged:   {} // signal natif textChanged propagé via alias
+        // Remonte vers la propriété publique + émet le signal avec paramètre
+        // Guard anti-boucle : on ne réassigne root.text que si différent
+        onTextChanged: {
+            if (root.text !== input.text) {
+                root.text = input.text
+                root.textChanged(input.text)
+            }
+        }
         Keys.onReturnPressed: root.accepted()
     }
 
     // Curseur visible au clic
     MouseArea {
-        anchors.fill:    parent
-        cursorShape:     Qt.IBeamCursor
-        onClicked:       input.forceActiveFocus()
+        anchors.fill: parent
+        cursorShape:  Qt.IBeamCursor
+        onClicked:    input.forceActiveFocus()
     }
 }
