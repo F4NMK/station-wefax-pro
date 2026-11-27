@@ -73,6 +73,7 @@ ApplicationWindow {
             id: contentStack
             Layout.fillWidth:  true
             Layout.fillHeight: true
+            clip: true
             currentIndex: mainWindow.currentTab
 
             RadioPanel    { id: radioPanel   }

@@ -395,6 +395,7 @@ Rectangle {
                     color: T.Theme.bgCanvas
                     radius: T.Theme.radiusMd
                     border.color: T.Theme.border
+                    clip: true
 
                     Canvas {
                         id: specCanvas
