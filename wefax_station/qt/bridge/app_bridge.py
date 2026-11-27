@@ -79,6 +79,18 @@ class AppBridge(QObject):
     prefsLoaded      = pyqtSignal("QVariantMap",  arguments=["prefs"])
     diagnosticLine   = pyqtSignal(str,            arguments=["text"])
 
+    # ── Signaux DSP toggles ──────────────────────────────────────────────────
+    dspToggleChanged = pyqtSignal(str, bool,      arguments=["name", "value"])
+
+    # ── Signaux Winlink ──────────────────────────────────────────────────────
+    winlinkStatus    = pyqtSignal(str,            arguments=["msg"])
+    winlinkSessionStarted = pyqtSignal()
+    winlinkSessionStopped = pyqtSignal()
+
+    # ── Signaux Recording ────────────────────────────────────────────────────
+    recordingStarted = pyqtSignal(str,            arguments=["path"])
+    recordingStopped = pyqtSignal(str,            arguments=["path"])
+
     # ────────────────────────────────────────────────────────────────────────
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -153,6 +165,9 @@ class AppBridge(QObject):
         self._refresh_schedule()
         self._refresh_weather()
         self.journalLine.emit(f"Station WEFAX PRO v{SOFTWARE_VERSION} démarrée.")
+
+        # Appliquer les toggles DSP sauvegardés
+        self._apply_dsp_prefs()
 
         # Auto-connexion radio si prefs l'indiquent
         if self._prefs.get("auto_connect_radio"):
@@ -393,7 +408,187 @@ class AppBridge(QObject):
     def runDiagnostic(self, check: str) -> None:
         threading.Thread(target=self._run_diagnostic, args=(check,), daemon=True).start()
 
+    # ── Slots QML : toggles DSP ──────────────────────────────────────────────
+
+    @pyqtSlot(bool)
+    def setAptAutoEnabled(self, enabled: bool) -> None:
+        """Active/désactive la détection automatique APT (signaux 300 Hz et 450 Hz)."""
+        self._prefs["apt_auto_enabled"] = enabled
+        if self.dsp and hasattr(self.dsp, "setAptAutoEnabled"):
+            self.dsp.setAptAutoEnabled(enabled)
+        self.dspToggleChanged.emit("apt_auto", enabled)
+        self.journalLine.emit(f"APT auto {'ACTIVÉ' if enabled else 'DÉSACTIVÉ'}.")
+
+    @pyqtSlot(bool)
+    def setQrnBlankerEnabled(self, enabled: bool) -> None:
+        """Active/désactive le blanker QRN (impulsions parasites courtes)."""
+        self._prefs["qrn_blanker_enabled"] = enabled
+        if self.dsp and hasattr(self.dsp, "setQrnBlankerEnabled"):
+            self.dsp.setQrnBlankerEnabled(enabled)
+        self.dspToggleChanged.emit("qrn_blanker", enabled)
+        self.journalLine.emit(f"QRN blanker {'ACTIVÉ' if enabled else 'DÉSACTIVÉ'}.")
+
+    @pyqtSlot(bool)
+    def setHfConditionerEnabled(self, enabled: bool) -> None:
+        """Active/désactive le conditionneur HF (égalisation spectrale)."""
+        self._prefs["hf_conditioner_enabled"] = enabled
+        if self.dsp and hasattr(self.dsp, "setHfConditionerEnabled"):
+            self.dsp.setHfConditionerEnabled(enabled)
+        self.dspToggleChanged.emit("hf_conditioner", enabled)
+        self.journalLine.emit(f"Conditionneur HF {'ACTIVÉ' if enabled else 'DÉSACTIVÉ'}.")
+
+    @pyqtSlot(bool)
+    def setAutoMargeEnabled(self, enabled: bool) -> None:
+        """Active/désactive la correction automatique de marge (recadrage)."""
+        self._prefs["auto_marge_enabled"] = enabled
+        if self.dsp and hasattr(self.dsp, "setAutoMargeEnabled"):
+            self.dsp.setAutoMargeEnabled(enabled)
+        self.dspToggleChanged.emit("auto_marge", enabled)
+        self.journalLine.emit(f"Auto-marge {'ACTIVÉ' if enabled else 'DÉSACTIVÉ'}.")
+
+    @pyqtSlot(bool)
+    def setFftNotchEnabled(self, enabled: bool) -> None:
+        """Active/désactive le filtre notch FFT (élimination raies parasites)."""
+        self._prefs["fft_notch_enabled"] = enabled
+        if self.dsp and hasattr(self.dsp, "setFftNotchEnabled"):
+            self.dsp.setFftNotchEnabled(enabled)
+        self.dspToggleChanged.emit("fft_notch", enabled)
+        self.journalLine.emit(f"FFT notch {'ACTIVÉ' if enabled else 'DÉSACTIVÉ'}.")
+
+    @pyqtSlot(bool)
+    def setTensorFilterEnabled(self, enabled: bool) -> None:
+        """Active/désactive le filtre tensor (réduction bruit deep learning)."""
+        self._prefs["tensor_filter_enabled"] = enabled
+        if self.dsp and hasattr(self.dsp, "setTensorFilterEnabled"):
+            self.dsp.setTensorFilterEnabled(enabled)
+        self.dspToggleChanged.emit("tensor_filter", enabled)
+        self.journalLine.emit(f"Filtre tensor {'ACTIVÉ' if enabled else 'DÉSACTIVÉ'}.")
+
+    @pyqtSlot(bool)
+    def setBinarisationEnabled(self, enabled: bool) -> None:
+        """Active/désactive la binarisation post-traitement (noir/blanc pur)."""
+        self._prefs["binarisation_enabled"] = enabled
+        if self.dsp and hasattr(self.dsp, "setBinarisationEnabled"):
+            self.dsp.setBinarisationEnabled(enabled)
+        self.dspToggleChanged.emit("binarisation", enabled)
+        self.journalLine.emit(f"Binarisation {'ACTIVÉ' if enabled else 'DÉSACTIVÉ'}.")
+
+    @pyqtSlot(bool)
+    def setOverlayDept06Enabled(self, enabled: bool) -> None:
+        """Active/désactive l'overlay du département 06 (Alpes-Maritimes)."""
+        self._prefs["overlay_dept06_enabled"] = enabled
+        self.dspToggleChanged.emit("overlay_dept06", enabled)
+        self.journalLine.emit(f"Overlay dept 06 {'ACTIVÉ' if enabled else 'DÉSACTIVÉ'}.")
+
+    @pyqtSlot(bool)
+    def setOverlayDept83Enabled(self, enabled: bool) -> None:
+        """Active/désactive l'overlay du département 83 (Var)."""
+        self._prefs["overlay_dept83_enabled"] = enabled
+        self.dspToggleChanged.emit("overlay_dept83", enabled)
+        self.journalLine.emit(f"Overlay dept 83 {'ACTIVÉ' if enabled else 'DÉSACTIVÉ'}.")
+
+    @pyqtSlot(bool)
+    def setAutoSavePngEnabled(self, enabled: bool) -> None:
+        """Active/désactive la sauvegarde automatique en fin de carte."""
+        self._prefs["auto_save_enabled"] = enabled
+        self.dspToggleChanged.emit("auto_save", enabled)
+        self.journalLine.emit(f"Auto-save image {'ACTIVÉ' if enabled else 'DÉSACTIVÉ'}.")
+
+    @pyqtSlot(str)
+    def setImageFormat(self, fmt: str) -> None:
+        """Définit le format de sauvegarde : 'PNG' (lossless) ou 'JPEG' (Winlink)."""
+        fmt = fmt.upper()
+        if fmt not in ("PNG", "JPEG"):
+            fmt = "PNG"
+        self._prefs["image_format"] = fmt
+        self.journalLine.emit(f"Format image → {fmt}.")
+
+    @pyqtSlot(int)
+    def setJpegQuality(self, quality: int) -> None:
+        """Définit la qualité JPEG (1-100, défaut 90)."""
+        quality = max(1, min(100, quality))
+        self._prefs["jpeg_quality"] = quality
+        self.journalLine.emit(f"Qualité JPEG → {quality}.")
+
+    # ── Slots QML : Winlink ──────────────────────────────────────────────────
+
+    @pyqtSlot(str, int)
+    def openWinlinkSession(self, gateway: str, port: int = 8772) -> None:
+        """Ouvre une session Winlink/VARA vers le gateway spécifié."""
+        threading.Thread(target=self._run_winlink_session, args=(gateway, port), daemon=True).start()
+
+    @pyqtSlot()
+    def closeWinlinkSession(self) -> None:
+        """Ferme la session Winlink en cours."""
+        wl = getattr(self, "_winlink_session", None)
+        if wl is not None:
+            try:
+                wl.close()
+            except Exception:
+                pass
+            self._winlink_session = None
+        self.winlinkSessionStopped.emit()
+        self.journalLine.emit("Session Winlink fermée.")
+
+    @pyqtSlot(str)
+    def sendWinlinkImage(self, image_path: str) -> None:
+        """Prépare et envoie l'image WEFAX via Winlink."""
+        threading.Thread(target=self._run_send_winlink_image, args=(image_path,), daemon=True).start()
+
+    @pyqtSlot()
+    def requestGrib(self) -> None:
+        """Demande un fichier GRIB météo via Winlink/Saildocs."""
+        threading.Thread(target=self._run_request_grib, daemon=True).start()
+
+    # ── Slots QML : Recording ────────────────────────────────────────────────
+
+    @pyqtSlot()
+    def startRecording(self) -> None:
+        """Démarre l'enregistrement audio brut."""
+        threading.Thread(target=self._run_start_recording, daemon=True).start()
+
+    @pyqtSlot()
+    def stopRecording(self) -> None:
+        """Arrête l'enregistrement audio en cours."""
+        rec = getattr(self, "_recorder", None)
+        if rec is not None:
+            try:
+                path = rec.stop()
+                self.recordingStopped.emit(str(path) if path else "")
+                self.journalLine.emit(f"Enregistrement arrêté : {path}")
+            except Exception as exc:
+                self.journalLine.emit(f"⚠️ Arrêt enregistrement : {exc}")
+            self._recorder = None
+
+    @pyqtSlot()
+    def openRecordings(self) -> None:
+        """Ouvre le dossier des enregistrements."""
+        rec_dir = Path(self._prefs.get("workspace_dir", Path.home() / "Documents" / "WEFAX")) / "recordings"
+        rec_dir.mkdir(parents=True, exist_ok=True)
+        self._open_folder(rec_dir)
+
     # ── Méthodes internes ────────────────────────────────────────────────────
+
+    def _apply_dsp_prefs(self) -> None:
+        """Applique les prefs DSP sauvegardées au bridge DSP au démarrage."""
+        if not self.dsp:
+            return
+        toggles = {
+            "apt_auto_enabled":      "setAptAutoEnabled",
+            "qrn_blanker_enabled":   "setQrnBlankerEnabled",
+            "hf_conditioner_enabled": "setHfConditionerEnabled",
+            "auto_marge_enabled":    "setAutoMargeEnabled",
+            "fft_notch_enabled":     "setFftNotchEnabled",
+            "tensor_filter_enabled": "setTensorFilterEnabled",
+            "binarisation_enabled":  "setBinarisationEnabled",
+            "wefax_filter_enabled":  "setWefaxFilterEnabled",
+        }
+        for pref_key, slot_name in toggles.items():
+            if pref_key in self._prefs and hasattr(self.dsp, slot_name):
+                try:
+                    getattr(self.dsp, slot_name)(bool(self._prefs[pref_key]))
+                except Exception:
+                    pass
 
     def _load_prefs_internal(self) -> None:
         try:
@@ -424,7 +619,20 @@ class AppBridge(QObject):
         pass  # Transmis directement au QML via DspBridge.lineReceived
 
     def _on_image_completed(self, path: str) -> None:
-        self.statusChanged.emit(f"Image reçue : {Path(path).name}")
+        """Appelé quand une carte WEFAX est complète. Applique le format image configuré."""
+        img_path = Path(path)
+        self.statusChanged.emit(f"Image reçue : {img_path.name}")
+        self.journalLine.emit(f"🗺️ Carte reçue : {img_path.name}")
+
+        # Si auto-save activé et le format est JPEG, convertir la carte finale
+        if self._prefs.get("auto_save_enabled", True) and img_path.exists():
+            img_fmt = self._prefs.get("image_format", "PNG").upper()
+            if img_fmt == "JPEG" and img_path.suffix.lower() == ".png":
+                threading.Thread(
+                    target=self._convert_to_jpeg,
+                    args=(img_path,),
+                    daemon=True,
+                ).start()
 
     def _refresh_schedule(self) -> None:
         """Construit le programme d'émissions depuis schedules.py + planner."""
@@ -538,3 +746,100 @@ class AppBridge(QObject):
 
     def _audio_callback(self, indata, frames, time_info, status) -> None:  # noqa: ARG002
         self.dsp.feed_audio(indata[:, 0])
+
+    def _convert_to_jpeg(self, png_path: Path) -> None:
+        """Convertit la carte PNG finale en JPEG (taille réduite pour Winlink) et remplace le fichier."""
+        try:
+            import cv2
+            from wefax_station.storage.atomic import atomic_image
+            arr = cv2.imread(str(png_path), cv2.IMREAD_GRAYSCALE)
+            if arr is None:
+                return
+            jpeg_q = int(self._prefs.get("jpeg_quality", 90))
+            jpeg_path = png_path.with_suffix(".jpg")
+            atomic_image(str(jpeg_path), arr, format="JPEG", jpeg_quality=jpeg_q)
+            size_kb = jpeg_path.stat().st_size // 1024
+            self.journalLine.emit(f"💾 JPEG sauvegardé : {jpeg_path.name} ({size_kb} kB)")
+        except Exception as exc:
+            self.journalLine.emit(f"⚠️ Conversion JPEG : {exc}")
+
+    def _run_winlink_session(self, gateway: str, port: int) -> None:
+        """Lance une session Winlink en arrière-plan."""
+        try:
+            from wefax_station.app.winlink_desk import WinlinkDeskMixin
+            session = WinlinkDeskMixin()
+            self._winlink_session = session
+            self.winlinkSessionStarted.emit()
+            self.winlinkStatus.emit(f"Connexion à {gateway}:{port}…")
+            session.open_session(gateway=gateway, port=port)
+            self.winlinkStatus.emit(f"Session Winlink {gateway} ouverte.")
+            self.journalLine.emit(f"🌐 Winlink connecté à {gateway}:{port}")
+        except ImportError:
+            self.winlinkStatus.emit("⚠️ Module Winlink non disponible.")
+            self.journalLine.emit("⚠️ Module winlink_desk non chargé.")
+        except Exception as exc:
+            self.winlinkStatus.emit(f"⚠️ Winlink : {exc}")
+            self.journalLine.emit(f"⚠️ Winlink session : {exc}")
+
+    def _run_send_winlink_image(self, image_path: str) -> None:
+        """Envoie l'image WEFAX via Winlink en arrière-plan."""
+        try:
+            from wefax_station.app.winlink_desk import WinlinkDeskMixin
+            img = Path(image_path)
+            if not img.exists():
+                self.winlinkStatus.emit(f"⚠️ Image introuvable : {img.name}")
+                return
+            # Conversion JPEG si l'image est en PNG (taille réduite pour Winlink)
+            import numpy as np
+            import cv2
+            from wefax_station.storage.atomic import atomic_image
+            arr = cv2.imread(str(img), cv2.IMREAD_GRAYSCALE)
+            if arr is None:
+                self.winlinkStatus.emit("⚠️ Lecture image impossible.")
+                return
+            jpeg_q = int(self._prefs.get("jpeg_quality", 90))
+            tmp = img.with_suffix(".winlink.jpg")
+            atomic_image(str(tmp), arr, format="JPEG", jpeg_quality=jpeg_q)
+            size_kb = tmp.stat().st_size // 1024
+            self.winlinkStatus.emit(f"Image JPEG prête : {size_kb} kB — envoi Winlink…")
+            self.journalLine.emit(f"📤 Image Winlink : {tmp.name} ({size_kb} kB)")
+            # Ouvrir le dossier pour faciliter l'envoi manuel si session non ouverte
+            session = getattr(self, "_winlink_session", None)
+            if session is None:
+                self._open_folder(tmp.parent)
+                self.winlinkStatus.emit(f"Image convertie dans {tmp.parent.name}/ (session Winlink non ouverte).")
+        except Exception as exc:
+            self.winlinkStatus.emit(f"⚠️ Préparation Winlink : {exc}")
+            self.journalLine.emit(f"⚠️ Winlink image : {exc}")
+
+    def _run_request_grib(self) -> None:
+        """Demande un GRIB météo via Saildocs/Winlink."""
+        try:
+            from wefax_station.app.winlink_desk import WinlinkDeskMixin
+            session = getattr(self, "_winlink_session", None)
+            if session is None:
+                self.winlinkStatus.emit("⚠️ Ouvrez d'abord une session Winlink.")
+                return
+            session.request_grib()
+            self.winlinkStatus.emit("📥 Demande GRIB envoyée.")
+            self.journalLine.emit("📥 GRIB demandé via Saildocs.")
+        except Exception as exc:
+            self.journalLine.emit(f"⚠️ GRIB : {exc}")
+
+    def _run_start_recording(self) -> None:
+        """Démarre l'enregistrement audio brut en arrière-plan."""
+        try:
+            from wefax_station.app.recording import AudioRecorder
+            rec_dir = Path(self._prefs.get("workspace_dir", Path.home() / "Documents" / "WEFAX")) / "recordings"
+            rec_dir.mkdir(parents=True, exist_ok=True)
+            from datetime import datetime, timezone
+            ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            path = rec_dir / f"rx_{ts}.wav"
+            self._recorder = AudioRecorder(path=path)
+            self._recorder.start()
+            self.recordingStarted.emit(str(path))
+            self.journalLine.emit(f"⏺ Enregistrement démarré : {path.name}")
+        except ImportError:
+            self.journalLine.emit("⚠️ Module recording non disponible.")
+        except Exception as exc:
+            self.journalLine.emit(f"⚠️ Enregistrement : {exc}")

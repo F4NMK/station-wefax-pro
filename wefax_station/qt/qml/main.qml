@@ -20,7 +20,8 @@ import "." as T
  *   2  RTTY    — téléimprimeur RTTY / NAVTEX
  *   3  MÉTÉO   — synoptique + bulletins
  *   4  PLAN    — programme émissions UTC
- *   5  CONFIG  — paramètres + switch UI
+ *   5  WINLINK — session Winlink/VARA, envoi images, GRIB
+ *   6  CONFIG  — paramètres + switch UI
  */
 ApplicationWindow {
     id:            mainWindow
@@ -57,7 +58,7 @@ ApplicationWindow {
         C.TabBar {
             id: mainTabBar
             Layout.fillWidth: true
-            model: ["📡 RADIO", "🖼 IMAGE", "🔤 RTTY", "🌦 MÉTÉO", "📅 PLAN", "⚙ CONFIG"]
+            model: ["📡 RADIO", "🖼 IMAGE", "🔤 RTTY", "🌦 MÉTÉO", "📅 PLAN", "🌐 WINLINK", "⚙ CONFIG"]
             currentIndex: mainWindow.currentTab
             onTabSelected: (idx) => mainWindow.currentTab = idx
 
@@ -76,11 +77,12 @@ ApplicationWindow {
             clip: true
             currentIndex: mainWindow.currentTab
 
-            RadioPanel    { id: radioPanel   }
-            ImagePanel    { id: imagePanel   }
-            RttyPanel     { id: rttyPanel    }
-            MeteoPanel    { id: meteoPanel   }
-            PlanPanel     { id: planPanel    }
+            RadioPanel    { id: radioPanel    }
+            ImagePanel    { id: imagePanel    }
+            RttyPanel     { id: rttyPanel     }
+            MeteoPanel    { id: meteoPanel    }
+            PlanPanel     { id: planPanel     }
+            WinlinkPanel  { id: winlinkPanel  }
             SettingsPanel { id: settingsPanel }
         }
 
@@ -118,6 +120,9 @@ ApplicationWindow {
     }
     Shortcut {
         sequence: "Ctrl+6"; onActivated: mainWindow.currentTab = 5
+    }
+    Shortcut {
+        sequence: "Ctrl+7"; onActivated: mainWindow.currentTab = 6
     }
     Shortcut {
         sequence: "Ctrl+Q"

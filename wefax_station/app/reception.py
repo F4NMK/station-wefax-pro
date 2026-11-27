@@ -15,7 +15,7 @@ from tkinter import messagebox
 import numpy as np
 import cv2
 from wefax_station.core.stations import is_rtty_frequency
-from wefax_station.storage.atomic import atomic_json, atomic_png
+from wefax_station.storage.atomic import atomic_json, atomic_png, atomic_image
 from wefax_station.storage import layout
 from wefax_station.ui.theme import UITheme
 from wefax_station.version import SOFTWARE_VERSION
@@ -1186,11 +1186,21 @@ class ReceptionMixin:
                 # (décodée, traitée, confiance) vont dans le sous-dossier « details »
                 det_dir = Path(self.archive_dir) / layout.DETAILS
                 files = []
+                # Format image configurable : PNG (lossless) ou JPEG (Winlink/VARA)
+                img_fmt     = getattr(self, "image_save_format", "PNG").upper()
+                jpeg_q      = int(getattr(self, "image_jpeg_quality", 90))
                 for suffix, array in outputs:
+                    # Adapter l'extension selon le format choisi
+                    if img_fmt == "JPEG" and not layout.is_tech_file(suffix):
+                        suffix = suffix.replace(".png", ".jpg")
                     target = (det_dir / (stem.name + suffix)) if layout.is_tech_file(suffix) else Path(str(stem) + suffix)
                     if target.parent != stem.parent:
                         target.parent.mkdir(parents=True, exist_ok=True)
-                    files.append(Path(atomic_png(str(target), array)))
+                    # Images techniques toujours en PNG (lossless), carte finale selon choix opérateur
+                    if img_fmt == "JPEG" and not layout.is_tech_file(suffix):
+                        files.append(Path(atomic_image(str(target), array, format="JPEG", jpeg_quality=jpeg_q)))
+                    else:
+                        files.append(Path(atomic_png(str(target), array)))
                 meta = {
                     "version": SOFTWARE_VERSION,
                     "station": self.radio.active_station_id,
