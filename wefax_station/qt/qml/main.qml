@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import QtQuick.Window
 import "components" as C
+import "components"
 import "panels"
 import "." as T
 
@@ -100,6 +101,11 @@ ApplicationWindow {
         }
     }
 
+    // ── Aide intégrée (F1) ───────────────────────────────────────────────────
+    HelpDialog {
+        id: helpDialog
+    }
+
     // ── Fermeture propre ─────────────────────────────────────────────────────
     onClosing: function(close) {
         close.accepted = false
@@ -133,6 +139,10 @@ ApplicationWindow {
     }
     Shortcut {
         sequence: "Ctrl+9"; onActivated: mainWindow.currentTab = 8
+    }
+    Shortcut {
+        sequence: "F1"
+        onActivated: helpDialog.openTopic("")
     }
     Shortcut {
         sequence: "Ctrl+Q"
