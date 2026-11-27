@@ -15,6 +15,7 @@ import sys
 import threading
 import time
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -90,6 +91,15 @@ class AppBridge(QObject):
     # ── Signaux Recording ────────────────────────────────────────────────────
     recordingStarted = pyqtSignal(str,            arguments=["path"])
     recordingStopped = pyqtSignal(str,            arguments=["path"])
+
+    # ── Signaux Archives ─────────────────────────────────────────────────────
+    archivesLoaded   = pyqtSignal("QVariantList", arguments=["files"])
+    imageCompleted   = pyqtSignal(str,            arguments=["path"])
+    exportDone       = pyqtSignal(str,            arguments=["path"])
+
+    # ── Signaux Météo analyse ────────────────────────────────────────────────
+    weatherCalcResult = pyqtSignal(str,           arguments=["report"])
+    webChartReady     = pyqtSignal(str, str,      arguments=["path", "label"])
 
     # ────────────────────────────────────────────────────────────────────────
     def __init__(self, parent: QObject | None = None) -> None:
@@ -300,6 +310,233 @@ class AppBridge(QObject):
             self.statusChanged.emit(f"Sauvegardé dans {dst_dir.name}")
         except Exception as exc:
             self.journalLine.emit(f"⚠️ Sauvegarde : {exc}")
+
+    @pyqtSlot()
+    def refreshArchives(self) -> None:
+        """Scanne le dossier archives et émet archivesLoaded avec la liste triée."""
+        archive_dir = Path(self._prefs.get("archive_dir",
+                           Path.home() / "Documents" / "WEFAX" / "archives"))
+        try:
+            base = archive_dir
+            partials = base / "partielles"
+            files = []
+            for p in list(base.glob("*.png")) + list(base.glob("*.jpg")) + \
+                     list((partials).glob("*.png") if partials.exists() else []):
+                if p.name in ("logo_personnalise.png",) or \
+                   p.name.startswith("reception_en_cours") or \
+                   "_decodee" in p.name or "_traitee" in p.name or \
+                   p.parent.name == "det":
+                    continue
+                stat = p.stat()
+                files.append({
+                    "path":    str(p),
+                    "name":    p.name + ("  (partielle)" if p.parent.name == "partielles" else ""),
+                    "size_kb": round(stat.st_size / 1024),
+                    "mtime":   stat.st_mtime,
+                    "partial": p.parent.name == "partielles",
+                })
+            files.sort(key=lambda f: f["mtime"], reverse=True)
+            self.archivesLoaded.emit(files)
+        except Exception as exc:
+            self.journalLine.emit(f"⚠️ Archives : {exc}")
+            self.archivesLoaded.emit([])
+
+    @pyqtSlot(str)
+    def exportSignedImage(self, src_path: str) -> None:
+        """Exporte l'image avec cartouche opérateur (signature) en PNG."""
+        import threading
+        threading.Thread(target=self._run_export_signed, args=(src_path,), daemon=True).start()
+
+    def _run_export_signed(self, src_path: str) -> None:
+        try:
+            import numpy as np
+            from PIL import Image, ImageDraw, ImageFont
+            from wefax_station.storage.atomic import atomic_png
+            from wefax_station.ui.logo import default_app_logo
+            from wefax_station.version import SOFTWARE_BRAND
+
+            p = Path(src_path)
+            if not p.exists():
+                self.journalLine.emit(f"⚠️ Export : fichier introuvable {p.name}")
+                return
+            with Image.open(p) as im:
+                image = im.convert("RGB")
+            arr = np.asarray(image)
+            height, width = arr.shape[:2]
+            # Cartouche bas de page
+            result = Image.new("RGB", (width, height + 92), (12, 23, 43))
+            result.paste(image, (0, 0))
+            d = ImageDraw.Draw(result)
+            try:
+                font = ImageFont.truetype("arial.ttf", 14)
+            except OSError:
+                font = ImageFont.load_default()
+            # Logo
+            logo_src = default_app_logo()
+            logo = logo_src.copy().convert("RGBA")
+            logo.thumbnail((58, 58))
+            result.paste(logo, (12, height + 16), logo)
+            # Textes
+            callsign = self._prefs.get("operator_callsign", "").strip()
+            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            texts = [
+                SOFTWARE_BRAND + (f" · Opérateur : {callsign}" if callsign else ""),
+                f"Réception : {stamp}",
+                "Export manuel signé",
+            ]
+            for i, text in enumerate(texts):
+                d.text((80, height + 9 + i * 26), text, font=font, fill=(176, 194, 212))
+            # Sauvegarde
+            out_path = p.parent / (p.stem + "_signe.png")
+            atomic_png(str(out_path), np.asarray(result))
+            self.exportDone.emit(str(out_path))
+            self.journalLine.emit(f"🖊️ Export signé : {out_path.name}")
+            self.statusChanged.emit(f"Export signé : {out_path.name}")
+        except Exception as exc:
+            self.journalLine.emit(f"⚠️ Export signé : {exc}")
+
+    @pyqtSlot(str)
+    def deleteArchiveFile(self, path: str) -> None:
+        """Supprime une archive après confirmation (depuis QML)."""
+        try:
+            p = Path(path)
+            if p.exists():
+                p.unlink()
+                self.journalLine.emit(f"🗑️ Supprimé : {p.name}")
+                self.refreshArchives()
+        except Exception as exc:
+            self.journalLine.emit(f"⚠️ Suppression : {exc}")
+
+    # ── Slots QML : analyse météo assistée ──────────────────────────────────
+
+    @pyqtSlot(str)
+    def computeGeostrophic(self, json_params: str) -> None:
+        """Calcule l'estimation géostrophique depuis les paramètres QML (JSON).
+
+        json_params : {"dp": float, "dist": float, "lat": float,
+                       "low": float|null, "front": str, "type": str, "valid": str}
+        Émet weatherCalcResult(str) avec le texte du rapport.
+        """
+        import json as _json
+        import threading
+        def _run():
+            try:
+                p = _json.loads(json_params)
+                from wefax_station.weather.geometry import geostrophic_estimate
+                result = geostrophic_estimate(
+                    float(p["dp"]), float(p["dist"]), float(p["lat"]),
+                    float(p["low"]) if p.get("low") else None,
+                )
+                kind    = p.get("type", "analyse").strip().lower()
+                valid   = p.get("valid", "").strip()
+                lines = [
+                    "CALCUL PHYSIQUE ASSISTÉ — pas une prévision locale complète",
+                    f"Carte : {kind} ; validité {valid}",
+                    "Source de position et de mesure : confirmation manuelle opérateur.",
+                    f"Gradient : {result['gradient_hpa_100km']:.2f} hPa / 100 km",
+                    f"Vent géostrophique théorique : {result['geostrophic_kmh']:.0f} km/h"
+                    f" ({result['geostrophic_kt']:.0f} kt).",
+                    "Ce n'est ni le vent à 10 m, ni une rafale. Densité supposée : 1,225 kg/m³.",
+                ]
+                if result.get("wind_from_deg") is None:
+                    lines.append("Direction : indéterminée sans sens des basses pressions et nord vrai.")
+                else:
+                    lines.append(f"Direction géostrophique de provenance : {result['wind_from_deg']:.0f}° vrais.")
+                comments = {
+                    "froid":  "Front froid confirmé à proximité : risque de bande pluvieuse ou d'averses.",
+                    "chaud":  "Front chaud confirmé : nébulosité étendue et précipitations possibles.",
+                    "occlus": "Front occlus confirmé : nuages et précipitations possibles.",
+                }
+                front = p.get("front", "").strip().lower()
+                lines.append(comments.get(front,
+                    "Pluie / couverture nuageuse : non déterminées par ce calcul de gradient."))
+                lines.extend([
+                    "Ensoleillement : non déterminable à partir du seul espacement des isobares.",
+                    "Évolution : comparer des cartes datées successives. Aucune échéance n'est inventée.",
+                    "Relief, friction, courbure et effets côtiers : non modélisés. Confiance non calibrée.",
+                ])
+                self.weatherCalcResult.emit("\n".join(lines))
+            except Exception as exc:
+                self.weatherCalcResult.emit(f"⚠️ Calcul impossible : {exc}")
+        threading.Thread(target=_run, daemon=True).start()
+
+    @pyqtSlot(str)
+    def downloadWebChart(self, chart_key: str) -> None:
+        """Télécharge une carte DWD et émet webChartReady(tmp_path)."""
+        import threading
+        threading.Thread(target=self._run_download_web_chart,
+                         args=(chart_key,), daemon=True).start()
+
+    def _run_download_web_chart(self, chart_key: str) -> None:
+        import io, urllib.request
+        try:
+            from wefax_station.core.web_charts import WEB_WEATHER_CHARTS
+            from wefax_station.version import SOFTWARE_VERSION
+            cfg      = WEB_WEATHER_CHARTS.get(chart_key)
+            if cfg is None:
+                # Clé numérique (index)
+                keys = list(WEB_WEATHER_CHARTS.keys())
+                try:
+                    cfg = WEB_WEATHER_CHARTS[keys[int(chart_key)]]
+                    chart_key = keys[int(chart_key)]
+                except (ValueError, IndexError):
+                    self.journalLine.emit(f"⚠️ Carte inconnue : {chart_key}")
+                    return
+            self.statusChanged.emit(f"Téléchargement {chart_key}…")
+            last_err = "Serveur injoignable"
+            for url in cfg["urls"]:
+                try:
+                    req = urllib.request.Request(url, headers={
+                        "User-Agent": f"Mozilla/5.0 StationWEFAXPro/{SOFTWARE_VERSION}"
+                    })
+                    with urllib.request.urlopen(req, timeout=12) as resp:
+                        raw = resp.read()
+                    # Sauvegarde temporaire
+                    tmp = Path(self._prefs.get("workspace_dir",
+                               Path.home() / "Documents" / "WEFAX")) / "web_chart_tmp.png"
+                    from PIL import Image as PILImage
+                    img = PILImage.open(io.BytesIO(raw)).convert("RGB")
+                    img.save(str(tmp))
+                    self.webChartReady.emit(str(tmp), chart_key)
+                    self.statusChanged.emit(f"✅ Carte DWD : {chart_key}")
+                    self.journalLine.emit(f"🌐 Carte Web DWD téléchargée : {chart_key}")
+                    return
+                except Exception as exc:
+                    last_err = str(exc)
+            self.journalLine.emit(f"⚠️ Carte Web : {last_err}")
+            self.statusChanged.emit(f"⚠️ Carte Web non disponible")
+        except Exception as exc:
+            self.journalLine.emit(f"⚠️ Carte Web : {exc}")
+
+    @pyqtSlot(result="QVariantList")
+    def listWebCharts(self) -> list:
+        """Retourne la liste des noms de cartes web disponibles."""
+        try:
+            from wefax_station.core.web_charts import WEB_WEATHER_CHARTS
+            return list(WEB_WEATHER_CHARTS.keys())
+        except Exception:
+            return []
+
+    # ── Slots QML : aide intégrée ─────────────────────────────────────────────
+
+    @pyqtSlot(result="QVariantList")
+    def listHelpTopics(self) -> list:
+        """Retourne la liste des rubriques d'aide : [{key, title}]."""
+        try:
+            from wefax_station.ui.help_content import HELP_TOPICS_25
+            return [{"key": k, "title": v[0]} for k, v in HELP_TOPICS_25.items()]
+        except Exception:
+            return []
+
+    @pyqtSlot(str, result=str)
+    def getHelpContent(self, topic_key: str) -> str:
+        """Retourne le contenu textuel d'une rubrique d'aide."""
+        try:
+            from wefax_station.ui.help_content import HELP_TOPICS_25
+            title, body = HELP_TOPICS_25.get(topic_key, ("Rubrique inconnue", "Contenu non disponible."))
+            return f"## {title}\n\n{body}"
+        except Exception as exc:
+            return f"⚠️ Erreur aide : {exc}"
 
     # ── Slots QML : RTTY / log ───────────────────────────────────────────────
 

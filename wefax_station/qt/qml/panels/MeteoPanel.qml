@@ -50,7 +50,7 @@ Rectangle {
             spacing: T.Theme.spacing
 
             Repeater {
-                model: ["🌬 Synoptique", "📰 Bulletins", "🗺 Cartes GRIB"]
+                model: ["🌬 Synoptique", "📰 Bulletins", "🗺 Cartes GRIB", "🔬 Analyse physique"]
                 delegate: C.FlatButton {
                     text:   modelData
                     accent: root.activeTab === index
@@ -334,6 +334,11 @@ Rectangle {
                     font.pixelSize: T.Theme.fontSizeSm
                     horizontalAlignment: Text.AlignHCenter
                 }
+            }
+
+            // ── 3 : ANALYSE PHYSIQUE ASSISTÉE ────────────────────────────
+            WeatherDeskPanel {
+                // Panel complet : calcul géostrophique + cartes DWD + observations
             }
         }
     }

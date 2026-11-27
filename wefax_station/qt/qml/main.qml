@@ -18,10 +18,11 @@ import "." as T
  *   0  RADIO   — contrôle IC-705, scan, RF
  *   1  IMAGE   — WEFAX décodage + DSP
  *   2  RTTY    — téléimprimeur RTTY / NAVTEX
- *   3  MÉTÉO   — synoptique + bulletins
+ *   3  MÉTÉO   — synoptique + bulletins + analyse physique
  *   4  PLAN    — programme émissions UTC
  *   5  WINLINK — session Winlink/VARA, envoi images, GRIB
- *   6  CONFIG  — paramètres + switch UI
+ *   6  ARCHIVES — historique cartes reçues, export signé
+ *   7  CONFIG  — paramètres + switch UI
  */
 ApplicationWindow {
     id:            mainWindow
@@ -58,7 +59,7 @@ ApplicationWindow {
         C.TabBar {
             id: mainTabBar
             Layout.fillWidth: true
-            model: ["📡 RADIO", "🖼 IMAGE", "🔤 RTTY", "🌦 MÉTÉO", "📅 PLAN", "🌐 WINLINK", "⚙ CONFIG"]
+            model: ["📡 RADIO", "🖼 IMAGE", "🔤 RTTY", "🌦 MÉTÉO", "📅 PLAN", "🌐 WINLINK", "🗂 ARCHIVES", "⚙ CONFIG"]
             currentIndex: mainWindow.currentTab
             onTabSelected: (idx) => mainWindow.currentTab = idx
 
@@ -83,6 +84,7 @@ ApplicationWindow {
             MeteoPanel    { id: meteoPanel    }
             PlanPanel     { id: planPanel     }
             WinlinkPanel  { id: winlinkPanel  }
+            ArchivesPanel { id: archivesPanel }
             SettingsPanel { id: settingsPanel }
         }
 
@@ -123,6 +125,9 @@ ApplicationWindow {
     }
     Shortcut {
         sequence: "Ctrl+7"; onActivated: mainWindow.currentTab = 6
+    }
+    Shortcut {
+        sequence: "Ctrl+8"; onActivated: mainWindow.currentTab = 7
     }
     Shortcut {
         sequence: "Ctrl+Q"
