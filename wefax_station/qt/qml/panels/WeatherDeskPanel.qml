@@ -366,7 +366,7 @@ Rectangle {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape:  Qt.PointingHandCursor
-                                onClicked:    calcOutput.selectAll(); calcOutput.copy()
+                                onClicked:    { calcOutput.selectAll(); calcOutput.copy() }
                             }
                         }
                     }
