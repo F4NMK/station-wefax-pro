@@ -1,3 +1,31 @@
+# Version 2.14.2 (28/11/2026) — cartes WEFAX prioritaires, fichiers réduits
+
+## Cartes WEFAX prioritaires (décision F4NMK du 28/11 : « c'est l'objectif premier de cette application »)
+* Constaté le 28/11 : départ à 11:59 vers l'avis DWD de 12:00 ; la carte GYA de 12:00 n'a été reprise qu'à
+  12:03:57, sans son haut (874 lignes sur ≈ 1250).
+* Un bulletin RTTY n'est pris que s'il tient avant la carte suivante du programme suivi (≈ 5 min ; 10 min
+  pour un créneau NAVTEX). Toute carte qui commence (analyse, prévision, vagues, rediffusion) interrompt le
+  bulletin en cours, avis et NAVTEX compris. Une écoute choisie par l'opérateur n'est jamais interrompue.
+* Remplace les règles 2.9.0, 2.9.3 et 2.9.7 (seule l'analyse de surface passait devant ; un avis n'était
+  interrompu par aucune carte). Aide intégrée et plan de réception mis à jour.
+* **Conséquence** (compté sur les programmes intégrés) : en suivant le DWD, ≈ 30 des 70 bulletins d'intérêt
+  quotidiens tiennent encore entre deux cartes ; en suivant Northwood (une carte toutes les 12 min), 4.
+
+## Fichiers images réduits (par défaut)
+* La carte signée (`_carte.png`) était un PNG couleur alors que la carte est en gris : codée en palette,
+  32 niveaux de gris (écart ≤ 4 niveaux sur 255, invisible) + 224 couleurs pour le bandeau.
+* `details/_traitee.png` n'est plus écrit : même contenu que la carte, recalculable depuis la décodée.
+* `details/_confiance.png` sur 4 niveaux (la limite « pixel fiable » ≥ 128 est conservée).
+* `details/_decodee.png` (source de tout retraitement) reste **sans perte** : stockée sur 64 niveaux, elle
+  ne gagnait que ≈ 23 % et une carte bruitée retraitée avait 2,7 % de pixels visiblement changés.
+* Mesuré sur la même carte rejouée (autotest, 241 lignes) : 1 310 ko → ≈ 460 ko (carte 438 → 127 ko).
+  Les exports demandés par l'opérateur (Exporter, copie corrigée) restent en PNG complet.
+
+## Vérifié
+* Autotest : 238/239 (nouveaux contrôles : priorité des cartes, écoute opérateur, NAVTEX, bulletin pris dans
+  un trou du programme, fichiers réduits). Seul échec : « 2110 contrôles WEFAX », déjà présent en v2.14.
+* Fidélité de la carte décodée inchangée (corrélation 0,973).
+
 # Version 2.14.1 (28/11/2026) — suivi du VFO, gain RF automatique, filtre anti-brouilleur, copie Winlink
 
 Base : v2.14 Tkinter (l'essai d'interface Qt/QML du 27/11 est abandonné : il avait cassé l'affichage).

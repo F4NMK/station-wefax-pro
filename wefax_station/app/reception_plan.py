@@ -391,8 +391,9 @@ class ReceptionPlanMixin:
         tk.Label(
             g1,
             text=(
-                "Règles : une carte en cours n'est jamais interrompue ; le bulletin est pris à son heure, ou "
-                "juste après la fin de la carte ; le retour aux cartes se fait dès la fin du bulletin (NNNN ou "
+                "Règles : les cartes WEFAX sont prioritaires. Une carte en cours n'est jamais interrompue ; un "
+                "bulletin n'est pris que s'il tient avant la carte suivante (≈ 5 min, NAVTEX 10 min) et une carte "
+                "qui commence l'interrompt, avis compris. Retour aux cartes dès la fin du bulletin (NNNN ou "
                 "boucle « RYRY / CQ »). L'ordre des catégories ci-dessus fixe la priorité."
             ),
             bg=bg,

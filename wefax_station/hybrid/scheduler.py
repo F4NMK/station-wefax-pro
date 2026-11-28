@@ -10,8 +10,10 @@ Constats terrain (15/11/2026) :
 
 Règles retenues (mode HYBRIDE) :
 1. une carte en cours de tracé n'est jamais interrompue ;
-2. un bulletin RTTY « d'intérêt » (catégories choisies dans Réglages) est pris à son heure si aucune
-   carte n'est en cours, sinon juste après le STOP de la carte ;
+2. (2.14.1, F4NMK 28/11 : « cartes WEFAX prioritaires, c'est l'objectif premier ») un bulletin RTTY ou
+   NAVTEX « d'intérêt » n'est pris que s'il tient avant la carte suivante du programme suivi (≈ 5 min,
+   10 min pour un créneau NAVTEX) ; une carte qui commence interrompt le bulletin en cours, avis compris.
+   Seule une écoute choisie par l'opérateur n'est jamais interrompue ;
 3. le bulletin se termine sur NNNN, sur 30 s de boucle de service, sur 60 s sans signal RTTY valide ou
    à la fin de son créneau : il est archivé sans la boucle de service et l'on revient aux cartes ;
 4. la table de propagation (qualité mesurée par fréquence, avec son heure) est tenue à jour par les
@@ -503,40 +505,49 @@ class ReceptionScheduler:
                 return t, code, desc, pr
         return None
 
+    # 2.14.1 — durée probable de réception d'un bulletin (28/11 : avis DWD de 12:00 reçu de 11:59:26 au NNNN
+    # de 12:03:44) ; un créneau NAVTEX dure 10 min et le message peut commencer n'importe où dedans
+    BULLETIN_EST_S = 300
+    NAVTEX_EST_S = 600
+    BULLETIN_MARGIN_S = 30
+
+    def next_chart(self, st: ScheduleState, before_s, after_s):
+        """Première carte (tout type, toute rediffusion) du programme suivi commençant dans
+        [now - after_s, now + before_s] : (datetime, code, libellé), ou None."""
+        from wefax_station.core.schedules import chart_slots_around
+
+        slots = chart_slots_around(st.chart_slots, st.now, before_s=before_s, after_s=after_s)
+        return slots[0] if slots else None
+
     def chart_interrupt(self, st: ScheduleState):
-        """Règle F4NMK (18/11/2026) — une carte prioritaire peut-elle interrompre le bulletin RTTY en cours ?
-        * analyse de surface (situation présente, isobares) : oui, y compris un avis ou un créneau NAVTEX
-          (décision F4NMK du 19/11/2026 : « carte analyse surface prioritaire ») ;
-        * avis (coup de vent, tempête) : par aucune autre carte ;
-        * prévision de surface ≤ 48 h, rediffusion d'analyse : seulement si cette prévision RTTY a déjà été
-          reçue en entier dans les 12 dernières heures ;
-        * autres cartes, NAVTEX, écoute choisie par l'opérateur : jamais.
-        Renvoie une Decision, ou None si la règle ne s'applique pas."""
-        from wefax_station.core.schedules import PRIORITY_ANALYSE, chart_short_label
+        """Règle F4NMK du 28/11/2026 : « cartes WEFAX prioritaires, c'est l'objectif premier de cette
+        application ». Toute carte du programme suivi (analyse, prévision, vagues, rediffusion…) qui commence
+        interrompt le bulletin en cours : prévision ou avis RTTY, créneau NAVTEX. Seule une écoute choisie par
+        l'opérateur n'est jamais interrompue.
+        (Avant le 28/11 : seules l'analyse de surface et, sous condition, les prévisions courtes passaient
+        devant ; un avis n'était interrompu par aucune carte.)
+        Renvoie une Decision, ou None si aucune carte ne commence."""
+        from wefax_station.core.schedules import chart_short_label
 
         it = st.current_item
         if it is None or it.program == "OPERATEUR":
             return None
-        pc = self.priority_chart(st)
-        if pc is None:
+        nc = self.next_chart(st, before_s=self.PRIORITY_LEAD_S, after_s=self.PRIORITY_LATE_S)
+        if nc is None:
             return None
-        t, code, desc, pr = pc
-        what = f"{t:%H:%M} {chart_short_label(code, desc)}"
-        if pr == PRIORITY_ANALYSE:
-            kind = "NAVTEX" if it.is_navtex else ("avis RTTY" if it.category == "AVIS" else "prévision RTTY")
-            return Decision(
-                "GO_WEFAX", f"Carte prioritaire {what} (situation présente, isobares) : {kind} interrompu"
-            )
-        if it.is_navtex:
+        t, code, desc = nc
+        kind = "NAVTEX" if it.is_navtex else ("avis RTTY" if it.category == "AVIS" else "prévision RTTY")
+        return Decision(
+            "GO_WEFAX", f"Carte {t:%H:%M} {chart_short_label(code, desc)} : cartes prioritaires, {kind} interrompu"
+        )
+
+    def bulletin_blocked_by_chart(self, st: ScheduleState, it):
+        """2.14.1 — une carte commence-t-elle avant la fin probable de ce bulletin ? Si oui, on ne part pas :
+        la carte d'abord (cartes prioritaires), le bulletin seulement s'il tient dans un trou du programme."""
+        if it is None or it.program == "OPERATEUR":
             return None
-        if it.category == "AVIS":
-            return Decision("STAY", f"Avis RTTY en cours : jamais interrompu par cette carte ({what})")
-        if it.label in st.received_recent:
-            return Decision(
-                "GO_WEFAX",
-                f"Carte prioritaire {what} : « {it.label} » déjà reçue il y a moins de 12 h, bulletin interrompu",
-            )
-        return None
+        est = self.NAVTEX_EST_S if it.is_navtex else self.BULLETIN_EST_S
+        return self.next_chart(st, before_s=est + self.BULLETIN_MARGIN_S, after_s=self.PRIORITY_LATE_S)
 
     def decide(self, st: ScheduleState, mono_now=None) -> Decision:
         if st.pipeline == "WEFAX":
@@ -578,43 +589,20 @@ class ReceptionScheduler:
                 )
             it = self.due_item(st)
             if it is not None:
-                # 2.9.0 — analyse de surface imminente : on la prend d'abord (2.9.3 : avant un avis ou un NAVTEX
-                # aussi, décision F4NMK du 19/11)
-                # 2.9.8 — fenêtre prolongée après l'heure : le 19/11 à 18:00:07, START de l'analyse DWD reçu à
-                # 18:00:02 mais aucune ligne encore tracée (START puis phasage), départ vers l'avis de 18:00 et
-                # retour 15 s plus tard (deux changements de fréquence, avis coupé)
-                pc = self.priority_chart(st, before_s=self.ANALYSE_GUARD_S, after_s=self.PRIORITY_LATE_S)
-                if pc is not None and pc[3] == "ANALYSE":
+                # 2.14.1 — cartes prioritaires (F4NMK, 28/11) : on ne part vers un bulletin que s'il tient avant
+                # la carte suivante du programme suivi (toute carte, rediffusion comprise). Le 28/11 à 11:59,
+                # départ vers l'avis DWD de 12:00 : la carte GYA de 12:00 n'a été reprise qu'à 12:03:57, sans
+                # son haut (874 lignes). Remplace les règles 2.9.0 (analyse imminente) et 2.9.7 (bulletin entamé).
+                nc = self.bulletin_blocked_by_chart(st, it)
+                if nc is not None:
                     from wefax_station.core.schedules import chart_short_label
 
+                    t, code, desc = nc
                     return Decision(
                         "STAY",
-                        f"Carte prioritaire {pc[0]:%H:%M} {chart_short_label(pc[1], pc[2])} imminente : "
-                        f"bulletin {it.describe()} pris après le STOP",
+                        f"Carte {t:%H:%M} {chart_short_label(code, desc)} avant la fin probable du bulletin "
+                        f"{it.describe()} : cartes prioritaires, bulletin non pris",
                     )
-                # 2.9.7 — bulletin déjà bien entamé et carte de la station écoutée sur le point de commencer :
-                # la carte d'abord, le bulletin ensuite s'il est encore à l'antenne. Le 19/11 à 17:23, départ vers
-                # l'avis de 17:15 (DDK9) : 3 min de texte illisible, rien d'archivé, et le début de la carte GYA
-                # de 17:24 perdu (reprise en cours de route à 17:26:49).
-                late_s = (st.now - it.start).total_seconds()
-                if not it.is_navtex and late_s > self.LATE_BULLETIN_S:
-                    from wefax_station.core.schedules import chart_short_label, chart_slots_around
-
-                    soon = [
-                        x
-                        for x in chart_slots_around(
-                            st.chart_slots, st.now, before_s=self.ANALYSE_GUARD_S, after_s=self.PRIORITY_LATE_S
-                        )
-                        if "rediffusion" not in str(x[2]).lower()
-                    ]
-                    if soon:
-                        t, code, desc = soon[0]
-                        return Decision(
-                            "STAY",
-                            f"Bulletin {it.describe()} commencé il y a {late_s / 60:.0f} min et carte "
-                            f"{t:%H:%M} {chart_short_label(code, desc)} imminente : la carte d'abord, le bulletin "
-                            "après le STOP s'il est encore émis",
-                        )
                 return Decision("GO_RTTY", f"Bulletin RTTY d'intérêt : {it.describe()}", it)
             # 2.8.7 — créneau quotidien d'Athènes (cartes centrées sur la Méditerranée)
             from wefax_station.core.schedules import ATHENS_WINDOW_MIN
@@ -701,6 +689,11 @@ class ReceptionScheduler:
             if st.now < st.current_item.end + timedelta(minutes=1):
                 if st.rtty_end_marker and not st.rtty_text_active and st.now >= st.current_item.start + timedelta(minutes=3):
                     return Decision("GO_WEFAX", "Message NAVTEX terminé (NNNN) : retour aux cartes")
+                # 2.14.1 — cartes prioritaires : une carte qui commence interrompt le créneau NAVTEX (jamais
+                # l'écoute choisie par l'opérateur : chart_interrupt l'exclut)
+                ci = self.chart_interrupt(st)
+                if ci is not None:
+                    return ci
                 return Decision("STAY", "Créneau d'écoute en cours (NAVTEX ou choix opérateur) : écoute jusqu'à la fin")
             return Decision("GO_WEFAX", "Fin du créneau d'écoute : retour aux cartes")
         # délai de grâce : on arrive 60 s avant l'heure, la boucle de service précède le bulletin

@@ -143,8 +143,18 @@ def test_wefax_replay(app, root):
         stem = str(saved).replace("_carte.png", "")
         # 2.11.0 — images techniques dans le sous-dossier « details »
         tech = str(saved.parent / "details" / saved.name.replace("_carte.png", ""))
-        for suffix in ("_decodee.png", "_traitee.png", "_confiance.png"):
+        for suffix in ("_decodee.png", "_confiance.png"):
             check("Fichier details/" + suffix, Path(tech + suffix).is_file())
+        # 2.14.1 — fichiers réduits : plus de « _traitee » (doublon), carte en palette, confiance sur 4 niveaux
+        from PIL import Image as _Im
+
+        with _Im.open(saved) as _c, _Im.open(tech + "_confiance.png") as _k:
+            card_mode, conf_vals = _c.mode, len(set(np.asarray(_k.convert("L")).ravel().tolist()))
+        check(
+            "Fichiers réduits : pas de « _traitee », carte en palette, confiance sur 4 niveaux au plus",
+            not Path(tech + "_traitee.png").exists() and card_mode == "P" and conf_vals <= 4,
+            f"carte {card_mode}, {saved.stat().st_size / 1024:.0f} ko ; confiance {conf_vals} niveaux",
+        )
         check("Fichier .json", Path(stem + ".json").is_file())
         import json
 
@@ -1740,11 +1750,16 @@ def test_290(app, root):
         a.action == "GO_WEFAX" and b.action == "GO_WEFAX" and "avis" in b.reason,
         f"{a.action} / {b.action} ({b.reason})",
     )
+    # 2.14.1 — cartes prioritaires (F4NMK, 28/11) : avant, la prévision H+48 ne coupait qu'un bulletin déjà
+    # reçu et la carte vagues jamais ; désormais toute carte qui commence interrompt le bulletin
     check(
-        "Prévision H+48 de 18:47 : bulletin interrompu seulement s'il a été reçu < 12 h ; carte vagues : jamais",
-        c.action == "STAY" and e.action == "GO_WEFAX" and f.action == "STAY",
+        "Cartes prioritaires (F4NMK 28/11) : prévision H+48 de 18:47 et carte vagues interrompent le bulletin, reçu ou non",
+        c.action == "GO_WEFAX" and e.action == "GO_WEFAX" and f.action == "GO_WEFAX",
         f"{c.action} / {e.action} / {f.action}",
     )
+    opr = RttyItem(d0.replace(hour=18, minute=40), d0.replace(hour=19, minute=40), "OPERATEUR", "OPERATEUR", "Écoute opérateur")
+    o = sch.chart_interrupt(rst(d0.replace(hour=18, minute=46, second=30), opr))
+    check("Écoute choisie par l'opérateur : jamais interrompue par une carte", o is None, o.reason if o else "aucune")
 
     def wst(t):
         return ScheduleState(
@@ -1754,10 +1769,12 @@ def test_290(app, root):
 
     g = sch.decide(wst(d0.replace(hour=21, minute=57, second=30)))
     h_ = sch.decide(wst(d0.replace(hour=21, minute=55, second=0)))
+    sch.last_veille = sch.last_wefax_recheck = 1e12
+    k = sch.decide(wst(d0.replace(hour=14, minute=59, second=0)), mono_now=1e12)  # avis de 15:00, trou DWD
     check(
-        "Analyse de surface dans moins de 3 min : le bulletin attend la fin de la carte",
-        g.action == "STAY" and "imminente" in g.reason and h_.action == "GO_RTTY",
-        f"21:57:30 {g.action} · 21:55 {h_.action}",
+        "Cartes prioritaires : bulletin non pris s'il ne tient pas avant la carte (22:00) ; pris s'il tient (15:00)",
+        g.action == "STAY" and h_.action == "STAY" and "cartes prioritaires" in h_.reason and k.action == "GO_RTTY",
+        f"21:57:30 {g.action} · 21:55 {h_.action} · 14:59 {k.action}",
     )
     sch2 = ReceptionScheduler(programs=(1,), categories=("AVIS",), rtty_enabled=False)
     M = _t.monotonic() + 10000
@@ -2318,8 +2335,8 @@ def test_293(app, root):
     avis2 = RttyItem(d0.replace(hour=12, minute=50), d0.replace(hour=13, minute=10), 1, "AVIS", "Avis par zones maritimes")
     a4 = sch.decide(rst(d0.replace(hour=12, minute=55, second=30), avis2, received=(avis2.label,)))  # H+36 12:56
     check(
-        "Analyse de surface prioritaire sur un avis RTTY (F4NMK 19/11) ; un avis n'est coupé par aucune autre carte",
-        a1.action == "GO_WEFAX" and "avis" in a1.reason and a2.action == "GO_WEFAX" and a4.action == "STAY",
+        "Cartes prioritaires (F4NMK 28/11) : analyse ou prévision qui commence → avis RTTY interrompu",
+        a1.action == "GO_WEFAX" and "avis" in a1.reason and a2.action == "GO_WEFAX" and a4.action == "GO_WEFAX",
         f"{a1.reason} | {a4.reason}",
     )
     st_nav = rst(d0.replace(hour=11, minute=40, second=45), nav)
@@ -2327,6 +2344,10 @@ def test_293(app, root):
     a3 = sch.chart_interrupt(st_nav)
     check("Analyse de surface prioritaire sur un créneau NAVTEX", a3 is not None and a3.action == "GO_WEFAX",
           a3.reason if a3 else "aucune décision")
+    st_nav.chart_slots = ((11, 41, "WWXX48", "Prévision des vagues H+48"),)
+    a3b = sch.decide(st_nav)
+    check("Cartes prioritaires : une carte vagues interrompt aussi le créneau NAVTEX", a3b.action == "GO_WEFAX",
+          a3b.reason)
     sch_g = ReceptionScheduler(programs=(1,), categories=("AVIS",), rtty_enabled=True)
     av_it = next(it for it in rtty_items(d0, horizon_min=24 * 60, programs=(1,), categories=("AVIS",)))
     an = av_it.start + timedelta(minutes=2)
@@ -2334,8 +2355,8 @@ def test_293(app, root):
                       rtty_text_active=False, rtty_service_s=0.0, rtty_no_signal_s=0.0, rtty_end_marker=False,
                       chart_slots=((an.hour, an.minute, "ASXX", "Analyse de surface"),))
     g = sch_g.decide(w)
-    check("Analyse dans moins de 3 min : un avis attend aussi la fin de la carte", g.action == "STAY" and "imminente" in g.reason,
-          g.reason)
+    check("Analyse dans moins de 3 min : un avis attend aussi la fin de la carte",
+          g.action == "STAY" and "cartes prioritaires" in g.reason, g.reason)
 
     # ---- Athènes conditionnelle
     sch_a = ReceptionScheduler(programs=(1,), categories=(), rtty_enabled=False)
@@ -2699,9 +2720,9 @@ def test_297(app, root):
     finally:
         if saved_due is None:
             sch.__dict__.pop("due_item", None)
-    check("Bulletin commencé depuis 8 min et carte GYA de 17:24 imminente : la carte d'abord ; bulletin pris "
-          "ensuite s'il est encore émis ; un bulletin qui commence part toujours",
-          b1.action == "STAY" and "17:24" in b1.reason and b2.action == "GO_RTTY" and b3.action == "GO_RTTY",
+    check("Carte GYA de 17:24 imminente : la carte d'abord, que le bulletin soit entamé ou qu'il commence "
+          "(cartes prioritaires, 28/11) ; bulletin pris ensuite s'il tient avant la carte suivante",
+          b1.action == "STAY" and "17:24" in b1.reason and b2.action == "GO_RTTY" and b3.action == "STAY",
           f"{b1.action} / {b2.action} / {b3.action}")
 
     # P.AMP : la fin d'un fading n'est pas un gain du préampli

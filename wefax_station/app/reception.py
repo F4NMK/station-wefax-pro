@@ -15,7 +15,14 @@ from tkinter import messagebox
 import numpy as np
 import cv2
 from wefax_station.core.stations import is_rtty_frequency
-from wefax_station.storage.atomic import atomic_compact_chart, atomic_json, atomic_png
+from wefax_station.storage.atomic import (
+    CONFIDENCE_LEVELS,
+    atomic_card,
+    atomic_compact_chart,
+    atomic_json,
+    atomic_png,
+    atomic_png_levels,
+)
 from wefax_station.storage import layout
 from wefax_station.ui.theme import UITheme
 from wefax_station.version import SOFTWARE_VERSION
@@ -1177,20 +1184,28 @@ class ReceptionMixin:
                     stamp.strftime("%Y%m%d_%H%M%S_%f") + "_" + self.radio.active_station_id
                 )
                 confidence = self.rx_confidence_img[:n].copy() if hasattr(self, "rx_confidence_img") else None
-                outputs = [("_decodee.png", raw), ("_traitee.png", body)]
+                # 2.14.1 — fichiers réduits (F4NMK, 28/11) : « …_traitee.png » n'est plus écrit (même contenu que
+                # la carte, recalculable depuis la décodée) ; confiance sur 4 niveaux ; carte codée en palette
+                # (atomic_card). La décodée, source de tout retraitement, reste sans perte.
+                outputs = [("_decodee.png", raw)]
                 if confidence is not None and len(confidence) == n:
                     # carte de confiance : blanc = pixel mesuré de façon fiable, noir = pixel reconstitué / absent
                     outputs.append(("_confiance.png", confidence))
                 outputs.append(("_carte.png", signed))
                 # 2.11.0 — seule la carte finale reste à côté de sa fiche ; les images techniques
-                # (décodée, traitée, confiance) vont dans le sous-dossier « details »
+                # (décodée, confiance) vont dans le sous-dossier « details »
                 det_dir = Path(self.archive_dir) / layout.DETAILS
                 files = []
                 for suffix, array in outputs:
                     target = (det_dir / (stem.name + suffix)) if layout.is_tech_file(suffix) else Path(str(stem) + suffix)
                     if target.parent != stem.parent:
                         target.parent.mkdir(parents=True, exist_ok=True)
-                    files.append(Path(atomic_png(str(target), array)))
+                    if suffix == "_carte.png":
+                        files.append(Path(atomic_card(str(target), array, map_height=body.shape[0])))
+                    elif suffix == "_confiance.png":
+                        files.append(Path(atomic_png_levels(str(target), array, CONFIDENCE_LEVELS)))
+                    else:
+                        files.append(Path(atomic_png(str(target), array)))
                 # 2.14.1 — copie compacte pour Winlink / VARA HF (Réglages › Image), dans cartes/winlink/
                 compact_var = getattr(self, "winlink_copy_var", None)
                 compact_mode = str(compact_var.get()) if compact_var is not None else "OFF"
