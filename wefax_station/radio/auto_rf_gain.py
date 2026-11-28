@@ -67,6 +67,7 @@ class AutoRfGain:
     next_trial_t: float = -1e9
     paused_until: float = -1e9
     lowered_by_auto: bool = False
+    trial_qsy: int = 0
     events: list = field(default_factory=list)
     events_total: int = 0
 
@@ -120,10 +121,16 @@ class AutoRfGain:
         att: bool = False,
         chart_active: bool = False,
         other_trial: bool = False,
+        signal_present: bool = True,
+        qsy_id: int = 0,
     ):
         """Un appel par tick (≈ 6 s). Renvoie le gain CI-V à appliquer, ou None.
 
-        other_trial : le P.AMP automatique a un essai en cours (on n'en lance pas un second en même temps).
+        other_trial    : le P.AMP automatique a un essai en cours (on n'en lance pas un second en même temps).
+        signal_present : l'émission est entendue en ce moment (porteuse WEFAX accrochée, FSK RTTY valide).
+                         Hors émission, le SNR mesure du silence : aucun essai, aucune référence.
+        qsy_id         : compteur des QSY de l'application ; un QSY pendant l'essai (veille de propagation,
+                         changement de station) l'annule.
         """
         gain = int(gain)
         if not self.enabled:
@@ -155,19 +162,28 @@ class AutoRfGain:
                 return self._act(now, gain - OVF_STEP, f"surcharge OVF → gain RF {pct(max(MIN_GAIN, gain - OVF_STEP))} %")
             return None
 
-        if now < self.paused_until or snr_db is None:
-            return None
-
-        self.ema = snr_db if self.ema is None else EMA_ALPHA * snr_db + (1 - EMA_ALPHA) * self.ema
-
-        # 2. essai en cours : stabilisation puis mesure. Une carte qui commence pendant l'essai l'interrompt
-        # sans retour en arrière (chaque changement de gain marque l'image) ; la règle de fading (3) remonte
-        # le gain si ce palier fait perdre du signal.
+        # 2. essai en cours : une carte qui commence l'interrompt sans retour en arrière (chaque changement de
+        # gain marque l'image) ; la règle de fading (3) remonte le gain si ce palier fait perdre du signal.
         if self.phase in ("SETTLE", "MEASURE") and chart_active:
             self.phase = "IDLE"
             self.next_trial_t = now + TRIAL_GAP_S
             self._log(now, f"essai interrompu par le début d'une carte : gain RF {pct(gain)} % conservé")
             return None
+        # 2.14.1 (journal du 28/11, 12:11) — essai lancé juste après un STOP, poste déplacé par la veille de
+        # propagation, puis jugé sur le silence entre deux cartes (SNR 12,1 → 0,0 dB) : mesure sans valeur.
+        # Signal perdu ou QSY pendant l'essai → essai annulé, retour au palier précédent.
+        if self.phase in ("SETTLE", "MEASURE") and (
+            not signal_present or snr_db is None or qsy_id != self.trial_qsy
+        ):
+            self.phase = "IDLE"
+            self.next_trial_t = now + TRIAL_GAP_S
+            why = "changement de fréquence" if qsy_id != self.trial_qsy else "émission interrompue"
+            return self._act(now, self.before_gain, f"essai annulé ({why}) : retour à {pct(self.before_gain)} %")
+
+        if now < self.paused_until or snr_db is None or not signal_present:
+            return None
+
+        self.ema = snr_db if self.ema is None else EMA_ALPHA * snr_db + (1 - EMA_ALPHA) * self.ema
         if self.phase == "SETTLE":
             if now - self.phase_t >= SETTLE_S:
                 self.phase, self.samples = "MEASURE", []
@@ -212,5 +228,6 @@ class AutoRfGain:
         ):
             self.phase, self.phase_t = "SETTLE", now
             self.before_gain, self.before_snr = gain, self.ema
+            self.trial_qsy = qsy_id
             return self._act(now, gain - TRIAL_STEP, f"essai gain RF {pct(gain - TRIAL_STEP)} % (SNR {self.ema:.1f} dB)")
         return None

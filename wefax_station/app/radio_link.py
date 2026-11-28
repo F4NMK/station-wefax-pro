@@ -591,6 +591,8 @@ class RadioLinkMixin:
             att=bool(self.radio.actual_att),
             chart_active=chart_active,
             other_trial=bool(ap is not None and ap.phase != "IDLE"),
+            signal_present=bool(getattr(self, "_ap_present_now", False)),
+            qsy_id=int(getattr(self.radio, "qsy_count", 0)),
         )
         n_new = min(len(rg.events), max(0, rg.events_total - n_tot))
         for _, txt in (rg.events[-n_new:] if n_new else []):
@@ -640,8 +642,10 @@ class RadioLinkMixin:
         self._auto_preamp_tick(mode)
 
     def _auto_preamp_snr(self, mode):
-        """SNR utile du mode en cours, ou None s'il n'y a pas d'émission à suivre."""
+        """SNR utile du mode en cours, ou None s'il n'y a pas d'émission à suivre.
+        2.14.1 — mémorise aussi dans self._ap_present_now si l'émission est entendue À CET INSTANT."""
         now = time.monotonic()
+        self._ap_present_now = False
         if not self.audio_live_connected or getattr(self, "replay_active", False):
             return None
         if mode == "RTTY":
@@ -660,6 +664,7 @@ class RadioLinkMixin:
             )
         if present:
             self._ap_last_present = now
+        self._ap_present_now = bool(present)
         # on suit le fading tant que l'émission a été entendue il y a moins de 3 min
         if now - getattr(self, "_ap_last_present", -1e9) > 180:
             return None

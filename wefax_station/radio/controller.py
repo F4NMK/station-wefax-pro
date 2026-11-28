@@ -488,6 +488,7 @@ class _UnifiedRadioControllerBase:
         self.actual_freq_khz = float(carrier_freq_khz)
         self.update_station_metadata_by_freq(self.actual_freq_khz)
         self._dial_offset_khz = self.usb_dial_offset_khz if apply_usb_offset else 0.0
+        self.qsy_count = getattr(self, "qsy_count", 0) + 1  # 2.14.1 — un QSY annule un essai de gain RF
         dial_khz = carrier_freq_khz + self._dial_offset_khz
         self.actual_dial_khz = round(dial_khz, 3)
         freq_hz = int(round(self.actual_dial_khz * 1000.0))
