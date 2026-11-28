@@ -827,6 +827,46 @@ class _UnifiedRadioControllerBase:
                 except (ValueError, IndexError):
                     pass
 
+            # ── Lecture fréquence courante (CI-V 0x03) ────────────────────
+            # Réponse : 5 octets BCD little-endian (poids faible en premier)
+            # Format octet : chiffres BCD packés (ex: 0x78 → 78 décimal)
+            rep_f = self._civ_transaction([0x03], wait_s=0.05)
+            if rep_f and len(rep_f) >= 5 and rep_f[0] == 0x03:
+                try:
+                    # bytes 1-5 : fréquence en Hz, little-endian BCD packés
+                    bcd_bytes = rep_f[1:6] if len(rep_f) >= 6 else rep_f[1:]
+                    hz = 0
+                    mult = 1
+                    for b in bcd_bytes:
+                        lo = b & 0x0F
+                        hi = (b >> 4) & 0x0F
+                        hz += lo * mult
+                        mult *= 10
+                        hz += hi * mult
+                        mult *= 10
+                    if hz > 0:
+                        new_khz = round(hz / 1000.0, 3)
+                        if abs(new_khz - self.actual_dial_khz) > 0.1:  # seuil 100 Hz anti-bruit
+                            self.actual_dial_khz = new_khz
+                except Exception:
+                    pass
+
+            # ── Lecture mode courant (CI-V 0x04) ─────────────────────────
+            # Réponse : byte[0]=0x04, byte[1]=mode_code, byte[2]=filter_code
+            _ICOM_MODE_MAP = {
+                0x00: "LSB",   0x01: "USB",   0x02: "AM",    0x03: "CW",
+                0x04: "RTTY",  0x05: "FM",    0x06: "CW-R",  0x07: "CW-R",
+                0x08: "RTTY-R",0x11: "DV",    0x12: "USB-D", 0x17: "LSB-D",
+            }
+            rep_m = self._civ_transaction([0x04])
+            if rep_m and len(rep_m) >= 2 and rep_m[0] == 0x04:
+                mode_code = rep_m[1]
+                # Sur IC-705, USB-D est signalé comme mode=USB(0x01) + data=ON (via 0x1A 0x06)
+                # On utilise le mapping direct si disponible
+                new_mode = _ICOM_MODE_MAP.get(mode_code, f"M{mode_code:02X}")
+                if new_mode != self.actual_mode_str:
+                    self.actual_mode_str = new_mode
+
             return True
 
         elif "YAESU CAT ASCII" in self.protocol:
