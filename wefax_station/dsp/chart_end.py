@@ -71,3 +71,11 @@ class ChartEndDetector:
         return int(min(line_index, self.last_structured + WINDOW // 2))
 
 
+def scan_image(img, expected_lines=1250):
+    """Rejoue le détecteur sur une image enregistrée : (ligne de fin ou None, ligne de coupe)."""
+    det = ChartEndDetector()
+    for i, row in enumerate(np.asarray(img)):
+        det.update(i, row)
+        if det.should_end(i, expected_lines):
+            return i, det.crop_line(i)
+    return None, None

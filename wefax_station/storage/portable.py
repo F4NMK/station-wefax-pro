@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
-from tkinter import filedialog, messagebox  # TODO PyQt6 : QFileDialog / QMessageBox
+from tkinter import filedialog, messagebox
 from wefax_station.storage.atomic import atomic_json
 from wefax_station.version import PROJECT_ROOT, SOFTWARE_BRAND, SOFTWARE_VERSION
 from wefax_station.weather.reliability import WeatherReliabilityEstimator

@@ -171,6 +171,7 @@ class RTTYITA2Decoder:
         self.cached_q_eval = None
         self.last_metrics = self._metrics(None)
 
+    @classmethod
     def _score_lexical_plausibility(cls, text: str) -> float:
         """
         Rejette strictement le charabia aléatoire (`MKMPGBMLH HGOAT NAB025236PS6...`) :

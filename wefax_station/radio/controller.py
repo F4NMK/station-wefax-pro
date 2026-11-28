@@ -60,13 +60,12 @@ class _UnifiedRadioControllerBase:
         self.s_meter_label = "S8"
         self.s_meter_dbm = -79.0
         self.ovf_active = False
-        self.actual_rf_gain = 255           # gain RF courant (0–255) ; 255 = maximal
         self.last_auto_rf_action_ts = 0.0
         self.param_status = {}
         self.tx_guard_enabled = True
         self.cat_fail_count = 0
         self.model_name = ""
-        self._poll_count = 0          # compteur de cycles de polling (pour sous-échantillonner les lectures lentes)
+        self._poll_count = 0
 
     @property
     def cat_label(self):
@@ -600,54 +599,6 @@ class _UnifiedRadioControllerBase:
         self.actual_preamp = level
         return self.actual_preamp
 
-    def set_rf_gain(self, value: int) -> int:
-        """Règle le gain RF de l'IC-705 (CI-V 0x14 0x02, plage 0–255).
-
-        Utilisé par la boucle AGC-RF (auto_rf_gain.py) pour réduire le bruit
-        d'intermodulation sans dégrader le SNR.
-
-        La commande n'est JAMAIS émise si la radio est en émission (garde-fou _ensure_rx_safe).
-        Renvoie la valeur effective appliquée (relue depuis le matériel si possible).
-        """
-        value = max(0, min(255, int(value)))
-        if not self.port_open:
-            self.actual_rf_gain = value
-            self.log(f"ℹ️ [SIMU] Gain RF réglé sur {value} ({value*100//255} %)")
-            return value
-
-        if "ICOM" in self.protocol:
-            # CI-V 0x14 0x02 : RF gain. Encodage BCD 0000–0255 (2 octets BCD)
-            # 0x14 0x02 set : FE FE ADDR E0 14 02 bcd_hi bcd_lo FD
-            bcd_hi = int(f"{value:04d}"[:2])  # ex: value=200 → "0200" → "02" → 2
-            bcd_lo = int(f"{value:04d}"[2:])  # ex: value=200 → "0200" → "00" → 0
-            rep_set = self._civ_transaction([0x14, 0x02, bcd_hi, bcd_lo])
-            time.sleep(0.03)
-            # relecture de confirmation (0x14 0x02 sans paramètre)
-            rep_read = self._civ_transaction([0x14, 0x02])
-            if rep_read and len(rep_read) >= 4 and rep_read[0] == 0x14 and rep_read[1] == 0x02:
-                read_val = int(f"{rep_read[2]:02d}{rep_read[3]:02d}")
-                self.actual_rf_gain = read_val
-                self.log(f"🔄 [AGC-RF IC-705] Gain demandé={value} → lu={read_val} "
-                         f"({read_val*100//255} %)")
-                return read_val
-            elif rep_set == [0xFB]:
-                self.actual_rf_gain = value
-                self.log(f"✅ [AGC-RF IC-705] Gain RF={value} ({value*100//255} %) confirmé")
-            return self.actual_rf_gain
-
-        # Yaesu CAT ASCII : commande RG (RF Gain), valeur 0–255
-        elif "YAESU CAT ASCII" in self.protocol:
-            self._yaesu_ascii_cmd(f"RG{value:03d};", read_reply=False)
-            resp = self._yaesu_ascii_cmd("RG;", read_reply=True)
-            if len(resp) >= 5 and resp.startswith("RG") and resp[2:5].isdigit():
-                self.actual_rf_gain = int(resp[2:5])
-            else:
-                self.actual_rf_gain = value
-            return self.actual_rf_gain
-
-        self.actual_rf_gain = value
-        return value
-
     # ------------------------------------------------------------ veille spectrale (2.8.9)
     def _scope_cmd(self, cmd, timeout=0.35):
         """Commande 27 xx : renvoie la charge de la réponse qui lui correspond (27 xx …), ou FB / FA.
@@ -798,14 +749,12 @@ class _UnifiedRadioControllerBase:
 
         if "ICOM" in self.protocol:
             self._poll_count += 1
-
-            # ── Priorité 1 : fréquence (0x03) — lue à chaque cycle ────────
-            # Réponse : 5 octets BCD little-endian (poids faible en premier)
             _ICOM_MODE_MAP = {
                 0x00: "LSB",   0x01: "USB",   0x02: "AM",    0x03: "CW",
                 0x04: "RTTY",  0x05: "FM",    0x06: "CW-R",  0x07: "CW-R",
-                0x08: "RTTY-R",0x11: "DV",    0x12: "USB-D", 0x17: "LSB-D",
+                0x08: "RTTY-R", 0x11: "DV",   0x12: "USB-D", 0x17: "LSB-D",
             }
+            # Priorité 1 : fréquence (0x03) — lue à chaque cycle
             rep_f = self._civ_transaction([0x03], wait_s=0.10)
             if rep_f and len(rep_f) >= 5 and rep_f[0] == 0x03:
                 try:
@@ -815,18 +764,16 @@ class _UnifiedRadioControllerBase:
                     for b in bcd_bytes:
                         lo = b & 0x0F
                         hi = (b >> 4) & 0x0F
-                        hz += lo * mult
-                        mult *= 10
-                        hz += hi * mult
-                        mult *= 10
+                        hz += lo * mult; mult *= 10
+                        hz += hi * mult; mult *= 10
                     if hz > 0:
                         new_khz = round(hz / 1000.0, 3)
-                        if abs(new_khz - self.actual_dial_khz) > 0.1:  # seuil 100 Hz anti-bruit
+                        if abs(new_khz - self.actual_dial_khz) > 0.1:
                             self.actual_dial_khz = new_khz
                 except Exception:
                     pass
 
-            # ── Priorité 2 : mode (0x04) — lu à chaque cycle ──────────────
+            # Priorité 2 : mode (0x04) — lu à chaque cycle
             rep_m = self._civ_transaction([0x04])
             if rep_m and len(rep_m) >= 2 and rep_m[0] == 0x04:
                 mode_code = rep_m[1]
@@ -834,7 +781,7 @@ class _UnifiedRadioControllerBase:
                 if new_mode != self.actual_mode_str:
                     self.actual_mode_str = new_mode
 
-            # ── Priorité 3 : S-mètre (0x15,0x02) — lu à chaque cycle ─────
+            # Priorité 3 : S-mètre (0x15,0x02) — lu à chaque cycle
             rep_s = self._civ_transaction([0x15, 0x02])
             if rep_s and len(rep_s) >= 4 and rep_s[0] == 0x15 and rep_s[1] == 0x02:
                 bcd_str = f"{rep_s[2]:02x}{rep_s[3]:02x}"
@@ -844,8 +791,9 @@ class _UnifiedRadioControllerBase:
                     self._update_s_label(self.s_meter_raw, max_s9=120)
             else:
                 self.s_meter_valid = False
+                return False
 
-            # ── Priorité 4 : lectures lentes — toutes les 5 itérations (~2.5s) ──
+            # Priorité 4 : lectures lentes — toutes les 5 itérations (~2.5 s)
             if self._poll_count % 5 == 0:
                 rep_ovf = self._civ_transaction([0x15, 0x07])
                 if rep_ovf and len(rep_ovf) >= 3 and rep_ovf[0] == 0x15 and rep_ovf[1] == 0x07:
@@ -858,15 +806,6 @@ class _UnifiedRadioControllerBase:
                 rep_a = self._civ_transaction([0x11])
                 if rep_a and len(rep_a) >= 2 and rep_a[0] == 0x11:
                     self.actual_att = rep_a[1] > 0
-
-                # Lecture gain RF (0x14 0x02) — sert à l'AGC-RF pour détecter les modifications manuelles
-                rep_rg = self._civ_transaction([0x14, 0x02])
-                if rep_rg and len(rep_rg) >= 4 and rep_rg[0] == 0x14 and rep_rg[1] == 0x02:
-                    try:
-                        self.actual_rf_gain = int(f"{rep_rg[2]:02d}{rep_rg[3]:02d}")
-                    except (ValueError, IndexError):
-                        pass
-
             return True
 
         elif "YAESU CAT ASCII" in self.protocol:
@@ -920,12 +859,7 @@ class UnifiedRadioController(_UnifiedRadioControllerBase):
         return super().update_station_metadata_by_freq(freq_khz)
 
     def poll_hardware_state(self, *args, **kwargs):
-        """Interroge le poste au plus toutes les 2 s ; sinon renvoie le dernier résultat."""
-        now_m = time.monotonic()
-        last_p = getattr(self, "_last_civ_poll_mono", 0.0)
-        if (now_m - last_p) < 2.0 and getattr(self, "_last_civ_poll_result", None) is not None:
-            return self._last_civ_poll_result
-        self._last_civ_poll_mono = now_m
-        res = super().poll_hardware_state(*args, **kwargs)
-        self._last_civ_poll_result = res
-        return res
+        """Interroge le poste à chaque appel (cycle ~500 ms).
+        Fréquence et mode sont lus à chaque cycle ; paramètres lents toutes les 5 itérations.
+        """
+        return super().poll_hardware_state(*args, **kwargs)

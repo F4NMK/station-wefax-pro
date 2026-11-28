@@ -343,6 +343,12 @@ class WeatherDeskMixin:
         self.draft_loading = False
         self.bulletin_dirty = False
 
+    def _copy_bulletin(self):
+        text = self.txt_weather_report.get("1.0", "end-1c")
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.root.update_idletasks()
+        self.lbl_status.configure(text="Bulletin copié dans le presse-papiers.")
 
     def _bulletin_modified(self, event=None):
         if self.txt_weather_report.edit_modified():
@@ -363,6 +369,28 @@ class WeatherDeskMixin:
             self._draft_saved = (str(p), text)
             return True
 
+    def _save_weather_bulletin_manual(self):
+        op = self.operator_callsign_var.get().strip().upper()
+        op_tag = f"_{op}" if op else ""
+        default_name = (
+            f"BULLETIN_METEO_F4NMK{op_tag}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}Z.txt"
+        )
+        path = filedialog.asksaveasfilename(
+            title="Enregistrer le Bulletin Météo (.txt)",
+            initialdir=self.archive_dir,
+            defaultextension=".txt",
+            initialfile=default_name,
+            filetypes=[("Fichier Texte", "*.txt"), ("Tous", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            content = self.txt_weather_report.get("1.0", "end").strip()
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content + "\n")
+            self.log_event(f"📝 Bulletin météo enregistré sur demande opérateur : {os.path.basename(path)}")
+        except Exception as exc:
+            messagebox.showerror("Erreur sauvegarde bulletin", str(exc))
 
     def _download_web_weather_chart(self):
         """Carte du site de la DWD, affichée en CONSULTATION (2.10.0).

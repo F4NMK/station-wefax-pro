@@ -20,6 +20,12 @@ def sha256_of(path):
     return hashlib.sha256(data).hexdigest()
 
 
+def list_modules():
+    return sorted(
+        p.relative_to(PACKAGE_DIR).as_posix()
+        for p in PACKAGE_DIR.rglob("*.py")
+        if "__pycache__" not in p.parts
+    )
 
 
 def load_status():
@@ -29,6 +35,11 @@ def load_status():
         return {"modules": {}}
 
 
+def save_status(status):
+    STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = STATUS_FILE.with_suffix(".writing")
+    tmp.write_text(json.dumps(status, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.replace(STATUS_FILE)
 
 
 def check_validated():
