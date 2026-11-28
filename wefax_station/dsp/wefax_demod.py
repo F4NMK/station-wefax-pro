@@ -61,6 +61,20 @@ class WefaxStreamDemodulator:
     #   ROBUSTE  toujours le filtre étroit.
     SHARPNESS = "AUTO"
     DETAIL_BIAS_DB = 10.0
+    # 2.14.1 — filtre passe-bande « anti-brouilleur » (Réglages › Image), désactivé par défaut, appliqué
+    # APRÈS le suppresseur d'impulsions. Banc HF (outils/banc_hf.py, filtre FI FIL2 du poste simulé,
+    # corrélation carte décodée / émise) :
+    #                         sans     avec           sans     avec
+    #   brouilleur 2 kHz     0,720 → 0,781   QRN 15 dB 0,895 → 0,860
+    #   brouilleur 700 Hz    0,876 → 0,925   propre    0,962 → 0,952
+    # Utile contre une station voisine ; à laisser coupé par temps orageux (QRN). Placé AVANT le
+    # suppresseur, il étale chaque parasite dans le temps : QRN 0,895 → 0,816 (essayé, écarté ; c'était
+    # le choix de la version Qt du 27/11, en ordre 6, encore plus pénalisant).
+    # Bande fixe autour du centre 1900 Hz : noir 1475 / blanc 2325 Hz au shift 850 Hz, marge pour l'AFC
+    # ±40 Hz et les bandes latérales des signaux START / STOP.
+    PREFILTER = False
+    PREFILTER_BAND_HZ = (1250.0, 2550.0)
+    PREFILTER_ORDER = 4
 
     def _design(self):
         fs = self.fs
@@ -74,6 +88,10 @@ class WefaxStreamDemodulator:
         self.h_bb = self._h_bb_set[0]
         self.h_vid = self._h_vid_set[0]
         self.guard = max(1, int(round(0.0005 * fs)))
+        lo, hi = self.PREFILTER_BAND_HZ
+        self._sos_pre = sp_signal.butter(
+            self.PREFILTER_ORDER, [lo, min(hi, 0.45 * fs)], btype="band", fs=fs, output="sos"
+        )
 
     def _set_bandwidth(self, index):
         self.bw_index = int(index)
@@ -139,6 +157,7 @@ class WefaxStreamDemodulator:
         self.zi_num = np.zeros(len(self.h_vid) - 1)
         self.zi_den = np.zeros(len(self.h_vid) - 1)
         self.zi_mask = np.zeros(len(self.h_bb) - 1)
+        self.zi_pre = np.zeros((self._sos_pre.shape[0], 2))
         self.prev_z = None
         self.snr_env_db = None
         self.fade_cv = None
@@ -197,6 +216,10 @@ class WefaxStreamDemodulator:
             if np.any(hit):
                 blank = np.convolve(hit.astype(np.float64), np.ones(2 * self.guard + 1), mode="same") > 0
                 x = np.where(blank, 0.0, x)
+
+        # 1 bis. filtre passe-bande optionnel (après le suppresseur d'impulsions, voir PREFILTER)
+        if self.PREFILTER:
+            x, self.zi_pre = sp_signal.sosfilt(self._sos_pre, x, zi=self.zi_pre)
 
         # 2. bande de base
         f0 = center

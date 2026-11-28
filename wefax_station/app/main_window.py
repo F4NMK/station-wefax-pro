@@ -188,6 +188,8 @@ class StationWefaxApp(
 
         self.is_busy = False
         self.auto_rf_loop_active = True
+        self.auto_rf_gain_active = False  # 2.14.1 — gain RF automatique : choix explicite de l'opérateur
+        self.wefax_bandpass_active = False  # 2.14.1 — filtre anti-brouilleur : choix explicite de l'opérateur
         self.auto_day_night_active = True
         self.carrier_scan_active = False
         self.rx_decoding_active = True
@@ -290,6 +292,7 @@ class StationWefaxApp(
 
         self.root.after(180, self._realtime_rx_and_spectrum_loop)
         self.root.after(5000, self._periodic_watchdog_tick)
+        self.root.after(3000, self._vfo_follow_tick)
 
         self.log_event(
             f"🚀 {SOFTWARE_BRAND} prête — Décodage 120 RPM armé (Squelch SNR >= {self.snr_squelch_threshold_db} dB)."

@@ -184,6 +184,11 @@ class OperatorProfileMixin:
             if hasattr(self, "sharpness_var"):
                 self.sharpness_var.set(str(cfg.get("sharpness", "AUTO")))
                 self._apply_sharpness(save=False)
+            if hasattr(self, "winlink_copy_var"):
+                self.winlink_copy_var.set(str(cfg.get("winlink_copy", "OFF")))
+                self._apply_winlink_copy(save=False)
+            self.wefax_bandpass_active = bool(cfg.get("wefax_bandpass", False))
+            self._apply_wefax_bandpass(save=False)
             if hasattr(self, "adrasec_var"):
                 # profil créé avant la 2.8.5 (clé absente) : comportement ADRASEC conservé
                 self.adrasec_var.set(bool(cfg.get("adrasec_member", True)))
@@ -239,6 +244,10 @@ class OperatorProfileMixin:
                     self.auto_rf_loop_active = bool(rf["auto_rf_loop"])
                     if hasattr(self, "btn_auto_rf"):
                         self.btn_auto_rf.set_state(self.auto_rf_loop_active)
+                if "auto_rf_gain" in rf:
+                    self.auto_rf_gain_active = bool(rf["auto_rf_gain"])
+                    if hasattr(self, "_apply_auto_rf_gain"):
+                        self._apply_auto_rf_gain(save=False)
                 if "auto_day_night" in rf:
                     self.auto_day_night_active = bool(rf["auto_day_night"])
                     if hasattr(self, "btn_daynight"):
@@ -311,6 +320,8 @@ class OperatorProfileMixin:
                 "prevent_sleep": bool(self.prevent_sleep.get()) if hasattr(self, "prevent_sleep") else True,
                 "logo": self.custom_logo_pil is not None,
                 "sharpness": str(self.sharpness_var.get()) if hasattr(self, "sharpness_var") else "AUTO",
+                "winlink_copy": str(self.winlink_copy_var.get()) if hasattr(self, "winlink_copy_var") else "OFF",
+                "wefax_bandpass": bool(getattr(self, "wefax_bandpass_active", False)),
                 "adrasec_member": bool(self.adrasec_var.get()) if hasattr(self, "adrasec_var") else False,
                 "radio_hf": {
                     "protocol": self.cmb_proto.get() if hasattr(self, "cmb_proto") else self.radio.protocol,
@@ -328,6 +339,7 @@ class OperatorProfileMixin:
                     "preamp": int(self.radio.actual_preamp),
                     "attenuator": bool(self.radio.actual_att),
                     "auto_rf_loop": bool(self.auto_rf_loop_active),
+                    "auto_rf_gain": bool(getattr(self, "auto_rf_gain_active", False)),
                     "auto_day_night": bool(self.auto_day_night_active),
                     "audio_device": self.cmb_audio.get() if hasattr(self, "cmb_audio") else "",
                 },

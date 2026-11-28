@@ -68,6 +68,99 @@ class FakeYaesuLegacy:
                 self.out += bytes([0x07])
 
 
+class FakeIcom705:
+    """Répond comme un IC-705 en CI-V (adresse A4) : fréquence 0x03/0x05, mode 0x04/0x06, S-mètre 0x15 02,
+    OVF 0x15 07, P.AMP 0x16 02, ATT 0x11, gain RF 0x14 02 (BCD 0000–0255) ; FB pour les autres réglages.
+    Les commandes d'émission (0x1C, 0x17) sont notées dans `tx_seen` : un test doit vérifier qu'il reste
+    faux. `vfo_hz` peut être modifié par le test pour simuler l'opérateur qui tourne le bouton."""
+
+    def __init__(self, addr=0xA4, baud=19200, vfo_hz=10098900):
+        self.addr = addr
+        self.baud = baud
+        self.vfo_hz = int(vfo_hz)
+        self.mode = 0x01
+        self.data_mode = 0
+        self.smeter = 0x0095
+        self.preamp = 1
+        self.att = 0
+        self.rf_gain = 255
+        self.out = bytearray()
+        self.frames = []
+        self.tx_seen = False
+
+    @staticmethod
+    def _bcd_le(value, nbytes):
+        s = f"{int(value):0{2 * nbytes}d}"
+        return [int(s[i - 2 : i], 16) for i in range(len(s), 0, -2)]
+
+    @staticmethod
+    def _from_bcd_le(data):
+        hz, mult = 0, 1
+        for b in data:
+            hz += (b & 0x0F) * mult
+            mult *= 10
+            hz += ((b >> 4) & 0x0F) * mult
+            mult *= 10
+        return hz
+
+    def _reply(self, payload):
+        self.out += bytes([0xFE, 0xFE, 0xE0, self.addr] + list(payload) + [0xFD])
+
+    def handle(self, data, baud):
+        if baud != self.baud:
+            return
+        for raw in bytes(data).split(b"\xfd"):
+            p = raw.find(b"\xfe\xfe")
+            if p < 0 or len(raw) < p + 5:
+                continue
+            f = list(raw[p + 2 :])
+            if f[0] != self.addr:
+                continue
+            cmd = f[2:]
+            self.frames.append(cmd)
+            c = cmd[0]
+            if c in (0x1C, 0x17):
+                self.tx_seen = True
+                self._reply([0xFB])
+            elif c == 0x03:
+                self._reply([0x03] + self._bcd_le(self.vfo_hz, 5))
+            elif c == 0x05:
+                self.vfo_hz = self._from_bcd_le(cmd[1:6])
+                self._reply([0xFB])
+            elif c == 0x04:
+                self._reply([0x04, self.mode, 0x01])
+            elif c == 0x06:
+                self.mode = cmd[1] if len(cmd) > 1 else self.mode
+                self._reply([0xFB])
+            elif c == 0x15 and len(cmd) >= 2 and cmd[1] == 0x02:
+                self._reply([0x15, 0x02] + [int(f"{self.smeter:04d}"[:2], 16), int(f"{self.smeter:04d}"[2:], 16)])
+            elif c == 0x15 and len(cmd) >= 2 and cmd[1] == 0x07:
+                self._reply([0x15, 0x07, 0x00])
+            elif c == 0x16 and len(cmd) == 2 and cmd[1] == 0x02:
+                self._reply([0x16, 0x02, self.preamp])
+            elif c == 0x16 and len(cmd) >= 3 and cmd[1] == 0x02:
+                self.preamp = cmd[2]
+                self._reply([0xFB])
+            elif c == 0x11 and len(cmd) == 1:
+                self._reply([0x11, self.att])
+            elif c == 0x11:
+                self.att = cmd[1]
+                self._reply([0xFB])
+            elif c == 0x1A and len(cmd) == 2 and cmd[1] == 0x06:
+                self._reply([0x1A, 0x06, self.data_mode, 0x01])
+            elif c == 0x1A and len(cmd) >= 3 and cmd[1] == 0x06:
+                self.data_mode = cmd[2]
+                self._reply([0xFB])
+            elif c == 0x14 and len(cmd) == 2 and cmd[1] == 0x02:
+                s = f"{self.rf_gain:04d}"
+                self._reply([0x14, 0x02, int(s[:2], 16), int(s[2:], 16)])
+            elif c == 0x14 and len(cmd) >= 4 and cmd[1] == 0x02:
+                self.rf_gain = int(f"{cmd[2]:02x}{cmd[3]:02x}")
+                self._reply([0xFB])
+            else:
+                self._reply([0xFB])
+
+
 class FakeSerial:
     """Remplace serial.Serial : relie un port nommé à un poste simulé."""
 

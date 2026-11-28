@@ -79,6 +79,40 @@ class MenusMixin:
         if save and hasattr(self, "_save_preferences"):
             self._save_preferences()
 
+    # ------------------------------------------------------------------ filtre anti-brouilleur WEFAX
+    def _toggle_wefax_bandpass(self):
+        self.wefax_bandpass_active = not bool(getattr(self, "wefax_bandpass_active", False))
+        self._apply_wefax_bandpass()
+
+    def _apply_wefax_bandpass(self, save=True):
+        from wefax_station.dsp.wefax_demod import WefaxStreamDemodulator
+
+        on = bool(getattr(self, "wefax_bandpass_active", False))
+        if hasattr(self, "btn_wefax_bandpass"):
+            self.btn_wefax_bandpass.set_state(on)
+        if WefaxStreamDemodulator.PREFILTER != on:
+            WefaxStreamDemodulator.PREFILTER = on
+            self.log_event(
+                "Filtre anti-brouilleur WEFAX 1250–2550 Hz : "
+                + ("activé (utile contre une station voisine ; moins bon sous parasites d'orage)" if on else "désactivé")
+            )
+        if save and hasattr(self, "_save_preferences"):
+            self._save_preferences()
+
+    # ------------------------------------------------------------------ copie compacte Winlink
+    def _apply_winlink_copy(self, save=True):
+        var = getattr(self, "winlink_copy_var", None)
+        mode = str(var.get()).upper() if var is not None else "OFF"
+        if mode not in ("OFF", "FULL", "1200"):
+            mode = "OFF"
+            if var is not None:
+                var.set(mode)
+        if save:
+            labels = {"OFF": "désactivée", "FULL": "pleine largeur", "1200": "réduite à 1200 px"}
+            self.log_event(f"Copie compacte Winlink des cartes : {labels[mode]} (dossier cartes/winlink)")
+            if hasattr(self, "_save_preferences"):
+                self._save_preferences()
+
     # ------------------------------------------------------------------ barre de menus
     def _menu(self, parent):
         return tk.Menu(

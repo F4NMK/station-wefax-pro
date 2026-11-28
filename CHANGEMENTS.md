@@ -1,3 +1,54 @@
+# Version 2.14.1 (28/11/2026) — suivi du VFO, gain RF automatique, filtre anti-brouilleur, copie Winlink
+
+Base : v2.14 Tkinter (l'essai d'interface Qt/QML du 27/11 est abandonné : il avait cassé l'affichage).
+Les améliorations de cette période ont été reprises une par une et **mesurées** avant intégration ;
+deux d'entre elles, telles qu'écrites pour la version Qt, auraient dégradé la réception et ont été refaites.
+
+## Radio (CI-V)
+* **Le VFO tourné sur le poste est suivi** (`radio/controller.py`, `app/radio_link.py`) : lecture du VFO
+  seul chaque seconde (une transaction, ≈ 30 ms, lecture seule). La porteuse affichée et la station
+  reconnue suivent, avec le décalage USB du dernier QSY. Seuil 2 Hz (une retouche de 50 Hz est vue).
+  Avant : la fréquence affichée ne bougeait pas quand l'opérateur changeait de fréquence sur le poste.
+* QSY de l'application tenu sous verrou ; le polling saute son cycle pendant un QSY (pas de figeage, pas de
+  faux « changement manuel »).
+* Mode lu sur le poste : table des modes Icom corrigée et mode Data lu (0x1A 0x06) → « USB-D » exact.
+* OVF, P.AMP, ATT et gain RF relus à chaque cycle du chien de garde (6 s).
+* `set_rf_gain()` : encodage BCD correct (255 → 02 55 ; la version Qt envoyait 02 37, soit 237).
+
+## Gain RF automatique (option, désactivée par défaut — Réglages › Radio)
+* Nouveau `radio/auto_rf_gain.py`, sur le modèle du P.AMP automatique : essais par paliers de 10 % hors
+  tracé de carte, **gardés seulement si le SNR ne baisse pas** (tolérance 0,5 dB) ; surcharge OVF en
+  P.AMP 0 → paliers de 20 % avant l'ATT ; remontée sur fading ; jamais au-dessus du gain choisi par
+  l'opérateur, jamais sous 50 % ; pause 15 min si l'opérateur touche au gain ; retour au gain de
+  l'opérateur à la désactivation et au changement de station.
+* L'« AGC-RF » de la version Qt n'est pas repris : il visait un niveau audio de −18 dBFS que l'AGC FAST
+  du poste maintient quel que soit le gain RF ; il aurait descendu le gain jusqu'à son plancher.
+* Testé : 9 scénarios de l'automate + IC-705 simulé (`sim/fake_rigs.FakeIcom705`). **Non testé sur l'air.**
+
+## Filtre anti-brouilleur WEFAX (option, désactivée par défaut — Réglages › Image)
+* Passe-bande 1250–2550 Hz, ordre 4, **après** le suppresseur d'impulsions (`dsp/wefax_demod.py`).
+* Banc HF avec filtre FI du poste (corrélation carte décodée / émise, sans → avec) : brouilleur 2 kHz
+  0,720 → 0,781 ; brouilleur 700 Hz 0,876 → 0,925 ; QRN (orages) 0,895 → 0,860 ; signal propre
+  0,962 → 0,952. À activer contre une station voisine, à couper par temps orageux.
+* Le filtre de la version Qt (ordre 6, 1400–2400 Hz, **avant** le suppresseur) a été mesuré et écarté :
+  QRN 0,688, signal propre 0,942, détection START/STOP sous fading en baisse.
+
+## Copie compacte Winlink / VARA HF (option, désactivée par défaut — Réglages › Image)
+* `cartes/winlink/<carte>_winlink.png` : carte en 4 niveaux de gris + bandeau en couleurs (PNG 16
+  couleurs). Mesuré : carte signée 1809×1200 ≈ 2,3 Mo → ≈ 175 ko en pleine largeur, ≈ 100 ko réduite à
+  1200 px. La carte de référence `_carte.png` est inchangée (archives, comparaison, reprise intactes).
+* Les chiffres annoncés par la version Qt étaient faux : le PNG « optimisé » ne gagne que ≈ 1 %, un
+  JPEG de carte pèse 0,4 à 1 Mo (et non 40–80 ko) et crée des halos autour des isobares.
+
+## Vérifié / non vérifié
+* Autotest `outils/autotest.py` : 236/237, identique à la v2.14 d'origine (valeurs mesurées identiques).
+  Le seul échec, « 2110 contrôles WEFAX : 8, 16, 32, 32 min », existait déjà : le test attend encore
+  l'intervalle de 32 min que la 2.11.3 a ramené à 16 min.
+* Réception WEFAX rejouée avec filtre et copie Winlink activés : 12/12, copie écrite (29,6 ko contre 445 ko).
+* Garde-fou TX inchangé (0x1C et 0x17 bloquées) ; aucune trame d'émission vue par le poste simulé.
+* **Rien n'a été testé avec le vrai IC-705** : suivi du VFO, mode Data et gain RF automatique sont à
+  confirmer sur la station.
+
 # Version 2.11.3 (25/11/2026) — correctif : cartes DWD non reçues malgré signal fort (régressions 2.11.x)
 
 ## Constaté sur la station (25/11/2026, signal S9+15 dB, qualité 79 %)

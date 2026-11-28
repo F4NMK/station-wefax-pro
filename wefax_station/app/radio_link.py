@@ -13,6 +13,7 @@ from wefax_station.weather.reliability import WeatherReliabilityEstimator
 from wefax_station.dsp.passband import measure_passband
 from wefax_station.radio.profiles import REQUIRED_AUDIO_BAND
 from wefax_station.radio.auto_preamp import AutoPreamp
+from wefax_station.radio import auto_rf_gain as _arg
 
 
 def is_radio_audio_input(name) -> bool:
@@ -526,9 +527,98 @@ class RadioLinkMixin:
         self.auto_rf_loop_active = not self.auto_rf_loop_active
         self.btn_auto_rf.set_state(self.auto_rf_loop_active)
         if not self.auto_rf_loop_active:
+            self._restore_operator_rf_gain("boucle RF automatique coupée")
             self._warn_suboptimal_user_action(
                 "Contre-réaction RF automatique désactivée : le récepteur ne s'adaptera plus tout seul aux surcharges OVF."
             )
+
+    # ------------------------------------------- gain RF automatique (2.14.1)
+    def _auto_rf_gain_obj(self):
+        rg = getattr(self, "auto_rf_gain", None)
+        if rg is None:
+            rg = self.auto_rf_gain = _arg.AutoRfGain()
+        return rg
+
+    def _toggle_auto_rf_gain(self, save=True):
+        self.auto_rf_gain_active = not bool(getattr(self, "auto_rf_gain_active", False))
+        self._apply_auto_rf_gain(save=save)
+
+    def _apply_auto_rf_gain(self, save=True):
+        on = bool(getattr(self, "auto_rf_gain_active", False))
+        if hasattr(self, "btn_auto_rf_gain"):
+            self.btn_auto_rf_gain.set_state(on)
+        rg = self._auto_rf_gain_obj()
+        if on and "ICOM" not in self.radio.protocol:
+            self.log_event("ℹ️ Gain RF automatique : réservé aux postes Icom (CI-V) ; sans effet sur ce poste.")
+        if on:
+            known = self.radio.port_open and self.radio.handshake_ok
+            rg.set_enabled(True, int(self.radio.actual_rf_gain) if known else None, time.monotonic())
+            self.log_event(
+                "📶 [Gain RF auto] Activé : essais par paliers de 10 % hors tracé de carte, gardés seulement si le "
+                "SNR ne baisse pas ; descente en cas de surcharge OVF ; jamais au-dessus de votre réglage."
+            )
+        else:
+            rg.set_enabled(False, int(self.radio.actual_rf_gain), time.monotonic())
+            self._restore_operator_rf_gain("gain RF automatique désactivé")
+        if save and hasattr(self, "_save_preferences"):
+            self._save_preferences()
+
+    def _restore_operator_rf_gain(self, why):
+        rg = getattr(self, "auto_rf_gain", None)
+        if rg is None or not rg.lowered_by_auto:
+            return
+        if int(self.radio.actual_rf_gain) == rg.expected_gain and self.radio.port_open:
+            self.radio.set_rf_gain(rg.base_gain)
+            self.log_event(f"📶 [Gain RF auto] {why} → retour à votre gain RF {_arg.pct(rg.base_gain)} %.")
+        rg.expected_gain = int(self.radio.actual_rf_gain)
+        rg.lowered_by_auto = False
+        rg.phase = "IDLE"
+
+    def _auto_rf_gain_tick(self, mode, snr, chart_active, now):
+        """Renvoie le gain appliqué, ou None. Ne fait rien hors Icom ou si l'option est désactivée."""
+        rg = self._auto_rf_gain_obj()
+        if "ICOM" not in self.radio.protocol or not rg.enabled:
+            return None
+        ap = getattr(self, "auto_preamp", None)
+        n_tot = rg.events_total
+        target = rg.step(
+            now,
+            snr,
+            int(self.radio.actual_rf_gain),
+            ovf=bool(self.radio.ovf_active),
+            s_raw=int(self.radio.s_meter_raw),
+            preamp=int(self.radio.actual_preamp),
+            att=bool(self.radio.actual_att),
+            chart_active=chart_active,
+            other_trial=bool(ap is not None and ap.phase != "IDLE"),
+        )
+        n_new = min(len(rg.events), max(0, rg.events_total - n_tot))
+        for _, txt in (rg.events[-n_new:] if n_new else []):
+            self.log_event(f"📶 [Gain RF auto {mode}] {txt}")
+        if target is not None and target != int(self.radio.actual_rf_gain):
+            got = self.radio.set_rf_gain(target)
+            rg.expected_gain = int(got)
+            self.radio.last_auto_rf_action_ts = time.time()
+            return got
+        return None
+
+    VFO_FOLLOW_MS = 1000
+
+    def _vfo_follow_tick(self):
+        """2.14.1 — chaque seconde : le VFO est relu (lecture seule) et l'affichage suit l'opérateur qui
+        change de fréquence sur le poste. Le reste de l'état du poste garde la cadence du chien de garde (6 s)."""
+        try:
+            busy = (
+                self.connection_busy
+                or self.carrier_scan_active
+                or getattr(self, "winlink_session_active", False)
+            )
+            if not busy and self.radio.port_open and self.radio.handshake_ok:
+                if self.radio.poll_vfo_only():
+                    self._sync_ui_from_hardware()
+        except Exception as exc:
+            self.log_event("⚠️ Suivi du VFO : " + repr(exc))
+        self.root.after(self.VFO_FOLLOW_MS, self._vfo_follow_tick)
 
     # Boucle RF automatique : P.AMP automatique (RTTY et WEFAX) + atténuateur sur surcharge
     def _execute_closed_loop_rf_control(self):
@@ -599,28 +689,45 @@ class RadioLinkMixin:
                     self.radio.set_preamp(ap.base_level)
             ap.set_mode(mode)
             ap.reset()
+            # 2.14.1 — nouvelle station : le gain RF réduit par l'automatisme revient au réglage de l'opérateur
+            self._restore_operator_rf_gain("nouvelle station")
+            self._auto_rf_gain_obj().reset()
             self._ap_freq = freq
             self._ap_last_present = -1e9
         now = time.monotonic()
+        snr = self._auto_preamp_snr(mode)
+        chart_active = self._auto_preamp_chart_active(mode)
+        rg = self._auto_rf_gain_obj()
         n_tot = getattr(ap, "events_total", 0)
         target = ap.step(
             now,
-            self._auto_preamp_snr(mode),
+            # 2.14.1 — pendant un essai de gain RF, le P.AMP automatique ne juge pas le SNR (il varie à cause
+            # de l'essai, pas du fading)
+            None if rg.phase != "IDLE" else snr,
             self.radio.actual_preamp,
             int(self.radio.s_meter_raw),
             bool(self.radio.ovf_active),
-            chart_active=self._auto_preamp_chart_active(mode),
+            chart_active=chart_active,
         )
         # 2.9.3 — le 19/11 après 07:21, le P.AMP changeait sans aucune ligne au journal : la liste des
         # événements, plafonnée à 20, gardait la même longueur et « events[n:] » était toujours vide
         n_new = min(len(ap.events), max(0, getattr(ap, "events_total", 0) - n_tot))
         for _, txt in (ap.events[-n_new:] if n_new else []):
             self.log_event(f"📶 [P.AMP auto {mode}] {txt}")
-        if target is not None and target != self.radio.actual_preamp:
+        rf_target = None
+        preamp_applied = target is not None and target != self.radio.actual_preamp
+        if preamp_applied:
             self.radio.set_preamp(target)
             self.radio.last_auto_rf_action_ts = time.time()
             ap.expected_level = self.radio.actual_preamp
-        elif target is None and self.radio.ovf_active and self.radio.actual_preamp == 0 and not self.radio.actual_att:
+        else:
+            rf_target = self._auto_rf_gain_tick(mode, snr, chart_active, now)
+        # surcharge persistante : l'ATT n'intervient qu'après le gain RF automatique (s'il est activé) arrivé
+        # à son plancher
+        rf_floor = (not rg.enabled) or int(self.radio.actual_rf_gain) <= _arg.MIN_GAIN or "ICOM" not in self.radio.protocol
+        if preamp_applied or rf_target is not None:
+            pass
+        elif target is None and self.radio.ovf_active and self.radio.actual_preamp == 0 and not self.radio.actual_att and rf_floor:
             if time.time() - self.radio.last_auto_rf_action_ts > 6:
                 self.log_event("⚡ [Auto-RF] Surcharge persistante en P.AMP 0 -> Activation ATT (-20 dB).")
                 self.radio.set_attenuator(True)

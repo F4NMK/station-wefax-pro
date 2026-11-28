@@ -15,7 +15,7 @@ from tkinter import messagebox
 import numpy as np
 import cv2
 from wefax_station.core.stations import is_rtty_frequency
-from wefax_station.storage.atomic import atomic_json, atomic_png
+from wefax_station.storage.atomic import atomic_compact_chart, atomic_json, atomic_png
 from wefax_station.storage import layout
 from wefax_station.ui.theme import UITheme
 from wefax_station.version import SOFTWARE_VERSION
@@ -1191,6 +1191,20 @@ class ReceptionMixin:
                     if target.parent != stem.parent:
                         target.parent.mkdir(parents=True, exist_ok=True)
                     files.append(Path(atomic_png(str(target), array)))
+                # 2.14.1 — copie compacte pour Winlink / VARA HF (Réglages › Image), dans cartes/winlink/
+                compact_var = getattr(self, "winlink_copy_var", None)
+                compact_mode = str(compact_var.get()) if compact_var is not None else "OFF"
+                compact_path = None
+                if compact_mode in ("FULL", "1200"):
+                    try:
+                        compact_path = atomic_compact_chart(
+                            stem.parent / layout.WINLINK / (stem.name + "_winlink.png"),
+                            signed,
+                            map_height=body.shape[0],
+                            max_width=1200 if compact_mode == "1200" else None,
+                        )
+                    except Exception as exc:  # la carte de référence est déjà enregistrée
+                        self.log_event("⚠️ Copie compacte Winlink non écrite : " + repr(exc))
                 meta = {
                     "version": SOFTWARE_VERSION,
                     "station": self.radio.active_station_id,
@@ -1226,6 +1240,9 @@ class ReceptionMixin:
                     "afc_hz": round(float(getattr(self.dsp.stream, "afc_hz", 0.0)), 1),
                     "source": "image demodulee/corrigee ; non audio brut",
                     "files": [str(Path(p).relative_to(stem.parent)).replace("\\", "/") for p in files],
+                    "copie_winlink": (
+                        str(Path(compact_path).relative_to(stem.parent)).replace("\\", "/") if compact_path else None
+                    ),
                 }
                 atomic_json(str(stem) + ".json", meta)
                 arb = getattr(self, "hybrid_arbiter", None)
@@ -1236,6 +1253,11 @@ class ReceptionMixin:
                 self.last_saved_path = files[-1]
                 self.current_metadata_path = Path(str(stem) + ".json")
                 self.log_event("SAUVEGARDE VERIFIEE : " + str(files[-1]))
+                if compact_path:
+                    self.log_event(
+                        f"Copie compacte Winlink : {Path(compact_path).name} "
+                        f"({Path(compact_path).stat().st_size / 1024:.0f} ko)"
+                    )
                 self.lbl_archive_state.configure(text="Enregistrée : " + files[-1].name)
             else:
                 self.lbl_archive_state.configure(text="Carte en mémoire ; sauvegarde automatique désactivée")

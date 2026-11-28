@@ -25,6 +25,7 @@ from pathlib import Path
 CARDS = "cartes"
 PARTIAL = "partielles"  # sous-dossier de cartes/
 DETAILS = "details"  # sous-dossier de cartes/ et de bulletins/
+WINLINK = "winlink"  # sous-dossier de cartes/ : copies compactes pour Winlink / VARA HF (2.14.1)
 BULLETINS = "bulletins"
 MY_BULLETINS = "mes_bulletins"
 LOGS = "journaux"

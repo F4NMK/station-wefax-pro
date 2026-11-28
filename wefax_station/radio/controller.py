@@ -65,7 +65,8 @@ class _UnifiedRadioControllerBase:
         self.tx_guard_enabled = True
         self.cat_fail_count = 0
         self.model_name = ""
-        self._poll_count = 0
+        self.actual_rf_gain = 255  # gain RF lu sur le poste (CI-V 0x14 0x02, 0–255 ; 255 = maximum)
+        self._dial_offset_khz = self.usb_dial_offset_khz  # décalage VFO/porteuse du dernier QSY (2.14.1)
 
     @property
     def cat_label(self):
@@ -478,9 +479,16 @@ class _UnifiedRadioControllerBase:
         return False
 
     def set_wefax_frequency(self, carrier_freq_khz: float, apply_usb_offset: bool = True) -> bool:
+        # 2.14.1 — verrou tenu pendant tout le QSY : le polling (autre fil) ne peut pas lire l'ancien VFO
+        # entre la commande et la relecture et le prendre pour un changement fait sur le poste
+        with self.lock:
+            return self._set_wefax_frequency_locked(carrier_freq_khz, apply_usb_offset)
+
+    def _set_wefax_frequency_locked(self, carrier_freq_khz: float, apply_usb_offset: bool = True) -> bool:
         self.actual_freq_khz = float(carrier_freq_khz)
         self.update_station_metadata_by_freq(self.actual_freq_khz)
-        dial_khz = carrier_freq_khz + (self.usb_dial_offset_khz if apply_usb_offset else 0.0)
+        self._dial_offset_khz = self.usb_dial_offset_khz if apply_usb_offset else 0.0
+        dial_khz = carrier_freq_khz + self._dial_offset_khz
         self.actual_dial_khz = round(dial_khz, 3)
         freq_hz = int(round(self.actual_dial_khz * 1000.0))
 
@@ -748,11 +756,10 @@ class _UnifiedRadioControllerBase:
             return False
 
         if "ICOM" in self.protocol:
-            self._poll_count += 1
+            # Codes de mode CI-V Icom (IC-705) ; le mode Data (USB-D / LSB-D) se lit à part (0x1A 0x06)
             _ICOM_MODE_MAP = {
-                0x00: "LSB",   0x01: "USB",   0x02: "AM",    0x03: "CW",
-                0x04: "RTTY",  0x05: "FM",    0x06: "CW-R",  0x07: "CW-R",
-                0x08: "RTTY-R", 0x11: "DV",   0x12: "USB-D", 0x17: "LSB-D",
+                0x00: "LSB", 0x01: "USB", 0x02: "AM", 0x03: "CW", 0x04: "RTTY",
+                0x05: "FM", 0x06: "WFM", 0x07: "CW-R", 0x08: "RTTY-R", 0x17: "DV",
             }
             # Priorité 1 : fréquence (0x03) — lue à chaque cycle
             rep_f = self._civ_transaction([0x03], wait_s=0.10)
@@ -767,9 +774,7 @@ class _UnifiedRadioControllerBase:
                         hz += lo * mult; mult *= 10
                         hz += hi * mult; mult *= 10
                     if hz > 0:
-                        new_khz = round(hz / 1000.0, 3)
-                        if abs(new_khz - self.actual_dial_khz) > 0.1:
-                            self.actual_dial_khz = new_khz
+                        self._follow_external_dial(round(hz / 1000.0, 3))
                 except Exception:
                     pass
 
@@ -778,8 +783,12 @@ class _UnifiedRadioControllerBase:
             if rep_m and len(rep_m) >= 2 and rep_m[0] == 0x04:
                 mode_code = rep_m[1]
                 new_mode = _ICOM_MODE_MAP.get(mode_code, f"M{mode_code:02X}")
-                if new_mode != self.actual_mode_str:
-                    self.actual_mode_str = new_mode
+                if new_mode in ("USB", "LSB", "AM", "FM"):
+                    # lecture du mode Data : réponse 1A 06 <data 00/01/02/03> <filtre>
+                    rep_d = self._civ_transaction([0x1A, 0x06])
+                    if rep_d and len(rep_d) >= 3 and rep_d[0] == 0x1A and rep_d[1] == 0x06 and rep_d[2]:
+                        new_mode += "-D"
+                self.actual_mode_str = new_mode
 
             # Priorité 3 : S-mètre (0x15,0x02) — lu à chaque cycle
             rep_s = self._civ_transaction([0x15, 0x02])
@@ -793,19 +802,23 @@ class _UnifiedRadioControllerBase:
                 self.s_meter_valid = False
                 return False
 
-            # Priorité 4 : lectures lentes — toutes les 5 itérations (~2.5 s)
-            if self._poll_count % 5 == 0:
-                rep_ovf = self._civ_transaction([0x15, 0x07])
-                if rep_ovf and len(rep_ovf) >= 3 and rep_ovf[0] == 0x15 and rep_ovf[1] == 0x07:
-                    self.ovf_active = rep_ovf[2] == 1
+            # OVF, P.AMP, ATT et gain RF à chaque cycle (le chien de garde tourne toutes les 6 s ; le VFO a
+            # son propre suivi rapide, poll_vfo_only) : la boucle RF automatique travaille sur l'état réel
+            rep_ovf = self._civ_transaction([0x15, 0x07])
+            if rep_ovf and len(rep_ovf) >= 3 and rep_ovf[0] == 0x15 and rep_ovf[1] == 0x07:
+                self.ovf_active = rep_ovf[2] == 1
 
-                rep_p = self._civ_transaction([0x16, 0x02])
-                if rep_p and len(rep_p) >= 3 and rep_p[0] == 0x16 and rep_p[1] == 0x02:
-                    self.actual_preamp = int(rep_p[2])
+            rep_p = self._civ_transaction([0x16, 0x02])
+            if rep_p and len(rep_p) >= 3 and rep_p[0] == 0x16 and rep_p[1] == 0x02:
+                self.actual_preamp = int(rep_p[2])
 
-                rep_a = self._civ_transaction([0x11])
-                if rep_a and len(rep_a) >= 2 and rep_a[0] == 0x11:
-                    self.actual_att = rep_a[1] > 0
+            rep_a = self._civ_transaction([0x11])
+            if rep_a and len(rep_a) >= 2 and rep_a[0] == 0x11:
+                self.actual_att = rep_a[1] > 0
+
+            gain = self._read_rf_gain()
+            if gain is not None:
+                self.actual_rf_gain = gain
             return True
 
         elif "YAESU CAT ASCII" in self.protocol:
@@ -831,6 +844,90 @@ class _UnifiedRadioControllerBase:
             return False
 
         return False
+
+    # ------------------------------------------------------------------ gain RF (2.14.1)
+    @staticmethod
+    def _rf_gain_bcd(value: int) -> list:
+        """0–255 → deux octets BCD (« 0255 » → 0x02 0x55), format CI-V des niveaux 0x14."""
+        s = f"{max(0, min(255, int(value))):04d}"
+        return [int(s[:2], 16), int(s[2:], 16)]
+
+    @staticmethod
+    def _rf_gain_from_bcd(hi: int, lo: int):
+        txt = f"{hi:02x}{lo:02x}"
+        return int(txt) if txt.isdigit() else None
+
+    def _read_rf_gain(self):
+        if not self.port_open or "ICOM" not in self.protocol:
+            return None
+        rep = self._civ_transaction([0x14, 0x02])
+        if rep and len(rep) >= 4 and rep[0] == 0x14 and rep[1] == 0x02:
+            return self._rf_gain_from_bcd(rep[2], rep[3])
+        return None
+
+    def set_rf_gain(self, value: int) -> int:
+        """Règle le gain RF (IC-705 : CI-V 0x14 0x02, 0–255) et renvoie la valeur relue sur le poste.
+
+        Réglage de réception uniquement (le garde-fou TX ne laisse passer ni 0x1C ni 0x17). Hors Icom ou
+        sans poste, la valeur est seulement mémorisée."""
+        value = max(0, min(255, int(value)))
+        if not self.port_open or "ICOM" not in self.protocol:
+            self.actual_rf_gain = value
+            return value
+        with self.lock:
+            self._civ_transaction([0x14, 0x02] + self._rf_gain_bcd(value))
+            got = self._read_rf_gain()
+        self.actual_rf_gain = got if got is not None else value
+        self._set_param_status("gain_rf", "confirmé" if got == value else "écart", requested=value, readback=got)
+        return self.actual_rf_gain
+
+    def poll_vfo_only(self) -> bool:
+        """2.14.1 — lecture rapide du seul VFO (une transaction, ≈ 30 ms), appelée chaque seconde par
+        l'interface pour suivre l'opérateur qui tourne le bouton. Renvoie True si la fréquence a changé.
+        Sautée si un QSY de l'application tient le verrou. Lecture seule : aucune commande de réglage."""
+        if not self.port_open or not self.handshake_ok:
+            return False
+        if not self.lock.acquire(blocking=False):
+            return False
+        try:
+            hz = None
+            if "ICOM" in self.protocol:
+                rep = self._civ_transaction([0x03], wait_s=0.10)
+                if rep and len(rep) >= 5 and rep[0] == 0x03:
+                    hz = 0
+                    mult = 1
+                    for b in rep[1:6]:
+                        hz += (b & 0x0F) * mult
+                        mult *= 10
+                        hz += ((b >> 4) & 0x0F) * mult
+                        mult *= 10
+            elif "YAESU CAT ASCII" in self.protocol:
+                hz = parse_ascii_freq(self._yaesu_ascii_cmd("FA;", read_reply=True))
+            elif "YAESU CAT LEGACY" in self.protocol:
+                hz = parse_legacy_freq(self._legacy_cmd(LEGACY_READ_FREQ, 5))
+            if not hz or hz <= 0:
+                return False
+            return self._follow_external_dial(round(hz / 1000.0, 3))
+        finally:
+            self.lock.release()
+
+    def _follow_external_dial(self, dial_khz: float) -> bool:
+        """2.14.1 — VFO lu sur le poste différent du dernier connu : l'opérateur a changé de fréquence.
+
+        La porteuse (affichée, utilisée pour reconnaître la station) suit le VFO avec le décalage USB
+        appliqué au dernier QSY de l'application. Seuil 2 Hz : la relecture d'un QSY de l'application
+        tombe au hertz près, une retouche fine du VFO (50 Hz) est bien vue.
+        """
+        if abs(dial_khz - self.actual_dial_khz) <= 0.002:
+            return False
+        self.actual_dial_khz = dial_khz
+        self.actual_freq_khz = round(dial_khz - self._dial_offset_khz, 3)
+        self.update_station_metadata_by_freq(self.actual_freq_khz)
+        self.log(
+            f"🎛️ VFO changé sur le poste : {dial_khz:.3f} kHz "
+            f"(porteuse {self.actual_freq_khz:.1f} kHz → {self.active_station_id})"
+        )
+        return True
 
     def _update_s_label(self, raw_val: int, max_s9: int = 120):
         if raw_val <= max_s9:
@@ -859,7 +956,18 @@ class UnifiedRadioController(_UnifiedRadioControllerBase):
         return super().update_station_metadata_by_freq(freq_khz)
 
     def poll_hardware_state(self, *args, **kwargs):
-        """Interroge le poste à chaque appel (cycle ~500 ms).
-        Fréquence et mode sont lus à chaque cycle ; paramètres lents toutes les 5 itérations.
+        """Interroge le poste à chaque appel. Fréquence, mode et S-mètre à chaque cycle ; paramètres lents
+        (OVF, P.AMP, ATT, gain RF) une fois sur 5.
+
+        2.14.1 — si un QSY de l'application est en cours (verrou tenu par un autre fil), ce cycle est sauté
+        plutôt que d'attendre : l'interface ne fige pas et l'ancien VFO n'est pas pris pour un changement
+        manuel.
         """
-        return super().poll_hardware_state(*args, **kwargs)
+        if not self.lock.acquire(blocking=False):
+            return getattr(self, "_last_poll_result", False)
+        try:
+            res = super().poll_hardware_state(*args, **kwargs)
+            self._last_poll_result = res
+            return res
+        finally:
+            self.lock.release()

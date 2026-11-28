@@ -172,6 +172,15 @@ class SettingsTabsMixin:
         )
         self.btn_auto_rf.pack(side="left", expand=True, fill="x", padx=(2, 0))
 
+        # 2.14.1 — gain RF automatique (IC-705), désactivé par défaut : voir radio/auto_rf_gain.py
+        self.btn_auto_rf_gain = SwitchCheckButton(
+            rf2,
+            text="GAIN RF AUTO (essais mesurés)",
+            command=self._toggle_auto_rf_gain,
+            initial=bool(getattr(self, "auto_rf_gain_active", False)),
+        )
+        self.btn_auto_rf_gain.pack(side="left", expand=True, fill="x", padx=(2, 0))
+
         f_scan = tk.LabelFrame(
             parent,
             text=" 🌐 Les 7 Émetteurs WEFAX (Scan Intégral Jour+Nuit) — Cliquez pour QSY ",
@@ -495,6 +504,39 @@ class SettingsTabsMixin:
                 activebackground="#0f172a",
                 activeforeground="#ffffff",
             ).pack(side="left", padx=4)
+
+        # 2.14.1 — copie compacte de chaque carte pour Winlink / VARA HF (cartes/winlink/)
+        if not hasattr(self, "winlink_copy_var"):
+            self.winlink_copy_var = tk.StringVar(master=self.root, value="OFF")
+        f_wl = tk.Frame(f_rest, bg="#0f172a")
+        f_wl.pack(fill="x", pady=(1, 4))
+        tk.Label(f_wl, text="Copie compacte Winlink :", bg="#0f172a", fg="#cbd5e1").pack(side="left", padx=(4, 6))
+        for value, label in (
+            ("OFF", "Non"),
+            ("FULL", "Pleine largeur (≈ 175 ko)"),
+            ("1200", "Réduite 1200 px (≈ 100 ko)"),
+        ):
+            tk.Radiobutton(
+                f_wl,
+                text=label,
+                value=value,
+                variable=self.winlink_copy_var,
+                command=self._apply_winlink_copy,
+                bg="#0f172a",
+                fg="#e2e8f0",
+                selectcolor="#1e293b",
+                activebackground="#0f172a",
+                activeforeground="#ffffff",
+            ).pack(side="left", padx=4)
+
+        # 2.14.1 — filtre passe-bande anti-brouilleur (désactivé par défaut ; voir dsp/wefax_demod.py)
+        self.btn_wefax_bandpass = SwitchCheckButton(
+            f_rest,
+            text="Filtre anti-brouilleur 1250–2550 Hz (station voisine ; à couper par temps orageux)",
+            command=self._toggle_wefax_bandpass,
+            initial=bool(getattr(self, "wefax_bandpass_active", False)),
+        )
+        self.btn_wefax_bandpass.pack(fill="x", pady=1)
 
         self.btn_fft2d = SwitchCheckButton(
             f_rest, text="Lissage conservateur", command=self._toggle_fft_filter, initial=True
