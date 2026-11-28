@@ -66,6 +66,7 @@ class _UnifiedRadioControllerBase:
         self.tx_guard_enabled = True
         self.cat_fail_count = 0
         self.model_name = ""
+        self._poll_count = 0          # compteur de cycles de polling (pour sous-échantillonner les lectures lentes)
 
     @property
     def cat_label(self):
@@ -796,44 +797,18 @@ class _UnifiedRadioControllerBase:
             return False
 
         if "ICOM" in self.protocol:
-            rep_s = self._civ_transaction([0x15, 0x02])
-            if rep_s and len(rep_s) >= 4 and rep_s[0] == 0x15 and rep_s[1] == 0x02:
-                bcd_str = f"{rep_s[2]:02x}{rep_s[3]:02x}"
-                if bcd_str.isdigit():
-                    self.s_meter_raw = int(bcd_str)
-                    self.s_meter_valid = True
-                    self._update_s_label(self.s_meter_raw, max_s9=120)
-            else:
-                self.s_meter_valid = False
-                return False
+            self._poll_count += 1
 
-            rep_ovf = self._civ_transaction([0x15, 0x07])
-            if rep_ovf and len(rep_ovf) >= 3 and rep_ovf[0] == 0x15 and rep_ovf[1] == 0x07:
-                self.ovf_active = rep_ovf[2] == 1
-
-            rep_p = self._civ_transaction([0x16, 0x02])
-            if rep_p and len(rep_p) >= 3 and rep_p[0] == 0x16 and rep_p[1] == 0x02:
-                self.actual_preamp = int(rep_p[2])
-
-            rep_a = self._civ_transaction([0x11])
-            if rep_a and len(rep_a) >= 2 and rep_a[0] == 0x11:
-                self.actual_att = rep_a[1] > 0
-
-            # Lecture gain RF (0x14 0x02) — sert à l'AGC-RF pour détecter les modifications manuelles
-            rep_rg = self._civ_transaction([0x14, 0x02])
-            if rep_rg and len(rep_rg) >= 4 and rep_rg[0] == 0x14 and rep_rg[1] == 0x02:
-                try:
-                    self.actual_rf_gain = int(f"{rep_rg[2]:02d}{rep_rg[3]:02d}")
-                except (ValueError, IndexError):
-                    pass
-
-            # ── Lecture fréquence courante (CI-V 0x03) ────────────────────
+            # ── Priorité 1 : fréquence (0x03) — lue à chaque cycle ────────
             # Réponse : 5 octets BCD little-endian (poids faible en premier)
-            # Format octet : chiffres BCD packés (ex: 0x78 → 78 décimal)
-            rep_f = self._civ_transaction([0x03], wait_s=0.05)
+            _ICOM_MODE_MAP = {
+                0x00: "LSB",   0x01: "USB",   0x02: "AM",    0x03: "CW",
+                0x04: "RTTY",  0x05: "FM",    0x06: "CW-R",  0x07: "CW-R",
+                0x08: "RTTY-R",0x11: "DV",    0x12: "USB-D", 0x17: "LSB-D",
+            }
+            rep_f = self._civ_transaction([0x03], wait_s=0.10)
             if rep_f and len(rep_f) >= 5 and rep_f[0] == 0x03:
                 try:
-                    # bytes 1-5 : fréquence en Hz, little-endian BCD packés
                     bcd_bytes = rep_f[1:6] if len(rep_f) >= 6 else rep_f[1:]
                     hz = 0
                     mult = 1
@@ -851,21 +826,46 @@ class _UnifiedRadioControllerBase:
                 except Exception:
                     pass
 
-            # ── Lecture mode courant (CI-V 0x04) ─────────────────────────
-            # Réponse : byte[0]=0x04, byte[1]=mode_code, byte[2]=filter_code
-            _ICOM_MODE_MAP = {
-                0x00: "LSB",   0x01: "USB",   0x02: "AM",    0x03: "CW",
-                0x04: "RTTY",  0x05: "FM",    0x06: "CW-R",  0x07: "CW-R",
-                0x08: "RTTY-R",0x11: "DV",    0x12: "USB-D", 0x17: "LSB-D",
-            }
+            # ── Priorité 2 : mode (0x04) — lu à chaque cycle ──────────────
             rep_m = self._civ_transaction([0x04])
             if rep_m and len(rep_m) >= 2 and rep_m[0] == 0x04:
                 mode_code = rep_m[1]
-                # Sur IC-705, USB-D est signalé comme mode=USB(0x01) + data=ON (via 0x1A 0x06)
-                # On utilise le mapping direct si disponible
                 new_mode = _ICOM_MODE_MAP.get(mode_code, f"M{mode_code:02X}")
                 if new_mode != self.actual_mode_str:
                     self.actual_mode_str = new_mode
+
+            # ── Priorité 3 : S-mètre (0x15,0x02) — lu à chaque cycle ─────
+            rep_s = self._civ_transaction([0x15, 0x02])
+            if rep_s and len(rep_s) >= 4 and rep_s[0] == 0x15 and rep_s[1] == 0x02:
+                bcd_str = f"{rep_s[2]:02x}{rep_s[3]:02x}"
+                if bcd_str.isdigit():
+                    self.s_meter_raw = int(bcd_str)
+                    self.s_meter_valid = True
+                    self._update_s_label(self.s_meter_raw, max_s9=120)
+            else:
+                self.s_meter_valid = False
+
+            # ── Priorité 4 : lectures lentes — toutes les 5 itérations (~2.5s) ──
+            if self._poll_count % 5 == 0:
+                rep_ovf = self._civ_transaction([0x15, 0x07])
+                if rep_ovf and len(rep_ovf) >= 3 and rep_ovf[0] == 0x15 and rep_ovf[1] == 0x07:
+                    self.ovf_active = rep_ovf[2] == 1
+
+                rep_p = self._civ_transaction([0x16, 0x02])
+                if rep_p and len(rep_p) >= 3 and rep_p[0] == 0x16 and rep_p[1] == 0x02:
+                    self.actual_preamp = int(rep_p[2])
+
+                rep_a = self._civ_transaction([0x11])
+                if rep_a and len(rep_a) >= 2 and rep_a[0] == 0x11:
+                    self.actual_att = rep_a[1] > 0
+
+                # Lecture gain RF (0x14 0x02) — sert à l'AGC-RF pour détecter les modifications manuelles
+                rep_rg = self._civ_transaction([0x14, 0x02])
+                if rep_rg and len(rep_rg) >= 4 and rep_rg[0] == 0x14 and rep_rg[1] == 0x02:
+                    try:
+                        self.actual_rf_gain = int(f"{rep_rg[2]:02d}{rep_rg[3]:02d}")
+                    except (ValueError, IndexError):
+                        pass
 
             return True
 
