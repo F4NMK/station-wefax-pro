@@ -12,11 +12,15 @@ import ".." as T
  *   enabled       : bool (hérité)
  *
  * Signaux :
- *   textChanged(string text) — émis à chaque frappe, AVEC le texte courant
+ *   textChanged(string text) — signal automatique de la property string text,
+ *                              émis à chaque changement AVEC la valeur courante
  *   accepted()               — émis à l'appui de Entrée
  *
  * Usage :
  *   C.TextInput { text: root.gateway; onTextChanged: (t) => root.gateway = t }
+ *
+ * Note : NE PAS redéclarer signal textChanged — Qt génère automatiquement
+ * ce signal pour toute property string, avec le paramètre de la nouvelle valeur.
  */
 Rectangle {
     id: root
@@ -26,7 +30,7 @@ Rectangle {
     property string fontFamily:  T.Theme.fontBase
     property bool   readOnly:    false
 
-    signal textChanged(string text)
+    // signal textChanged(string text)  ← INTERDIT : doublon du signal auto de property
     signal accepted()
 
     implicitWidth:  100
@@ -39,8 +43,7 @@ Rectangle {
 
     opacity: enabled ? 1.0 : 0.4
 
-    // Mise à jour du champ interne quand la propriété externe change
-    // (sans boucle : on ne met à jour que si différent)
+    // Synchronisation propriété root → champ interne (guard anti-boucle)
     onTextChanged: (t) => { if (input.text !== t) input.text = t }
 
     // Placeholder
@@ -70,13 +73,12 @@ Rectangle {
         readOnly:        root.readOnly
         enabled:         root.enabled
 
-        // Remonte vers la propriété publique + émet le signal avec paramètre
-        // Guard anti-boucle : on ne réassigne root.text que si différent
+        // Remonte champ interne → property root.text (guard anti-boucle)
+        // Le signal automatique root.textChanged(text) est émis par Qt
+        // dès que root.text change de valeur.
         onTextChanged: {
-            if (root.text !== input.text) {
+            if (root.text !== input.text)
                 root.text = input.text
-                root.textChanged(input.text)
-            }
         }
         Keys.onReturnPressed: root.accepted()
     }
