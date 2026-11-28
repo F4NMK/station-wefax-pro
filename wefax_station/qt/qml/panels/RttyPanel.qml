@@ -212,7 +212,7 @@ Rectangle {
                 text: root.navtexFilter
                 placeholder: "tous"
                 fontFamily: T.Theme.fontMono
-                onTextChanged: (t) => root.navtexFilter = t.toUpperCase()
+                onTextChanged: root.navtexFilter = text.toUpperCase()
             }
 
             Item { Layout.fillWidth: true }

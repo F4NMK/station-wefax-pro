@@ -85,7 +85,7 @@ Rectangle {
                             text: root.gateway
                             placeholder: "F5LEN-10"
                             fontFamily: T.Theme.fontMono
-                            onTextChanged: (t) => root.gateway = t
+                            onTextChanged: root.gateway = text
                         }
                     }
 

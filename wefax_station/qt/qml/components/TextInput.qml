@@ -44,7 +44,9 @@ Rectangle {
     opacity: enabled ? 1.0 : 0.4
 
     // Synchronisation propriété root → champ interne (guard anti-boucle)
-    onTextChanged: (t) => { if (input.text !== t) input.text = t }
+    // Note : le signal automatique de property ne passe PAS de paramètre
+    // en Qt6 QML — on lit root.text directement
+    onTextChanged: { if (input.text !== root.text) input.text = root.text }
 
     // Placeholder
     Text {

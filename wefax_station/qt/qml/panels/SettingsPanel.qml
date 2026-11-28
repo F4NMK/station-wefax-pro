@@ -475,7 +475,7 @@ Rectangle {
                             text: root.workspaceDir
                             placeholder: "~/Documents/WEFAX"
                             fontFamily: T.Theme.fontMono
-                            onTextChanged: (t) => root.workspaceDir = t
+                            onTextChanged: root.workspaceDir = text
                         }
                         C.FlatButton { text: "📂"; accent: false; implicitWidth: 32; onClicked: appBridge.chooseWorkspaceDir() }
                     }
@@ -503,7 +503,7 @@ Rectangle {
                             text: root.archiveDir
                             placeholder: "~/Documents/WEFAX/archives"
                             fontFamily: T.Theme.fontMono
-                            onTextChanged: (t) => root.archiveDir = t
+                            onTextChanged: root.archiveDir = text
                         }
                         C.FlatButton { text: "📂"; accent: false; implicitWidth: 32; onClicked: appBridge.chooseArchiveDir() }
                     }
