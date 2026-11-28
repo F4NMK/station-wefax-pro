@@ -83,7 +83,34 @@ def despeckle_unreliable(f, conf, threshold=0.3):
     return np.where(c < threshold, med, f)
 
 
-def restore_chart(img, conf=None, repair=True, flatten=True, binarize=False):
+# 2.14.3 — débruitage par moyennes non locales (NLM), après la réparation guidée par la confiance et avant
+# l'accentuation : l'accentuation et la courbe de tons transformaient les amas de bruit en taches noires
+# (capture F4NMK du 28/11, chiffres de la carte DDK3 empâtés). Force adaptée au bruit mesuré sur la carte
+# (h = 2,5 σ) : sur une carte propre (σ ≈ 1,5) le filtre ne fait rien, il ne travaille que sur les cartes
+# bruitées. Banc HF (filtre FI du poste, corrélation carte restaurée / émise) : 10 dB + fading
+# 0,614 → 0,710 ; 18 dB + fading 0,738 → 0,756 ; 25-30 dB et QRN inchangés. Une force fixe (h = 18)
+# dégradait au contraire les cartes à pointillé fin (QRN 0,888 → 0,848) : écartée.
+NLM_K = 2.5
+NLM_MIN_H = 4.0  # en dessous, carte propre : pas de débruitage
+NLM_MAX_H = 40.0
+
+
+def noise_sigma(u8):
+    """Écart-type du bruit estimé de façon robuste : écart au médian 3×3 (le trait fin y résiste)."""
+    f = np.asarray(u8, dtype=np.float32)
+    m = cv2.medianBlur(np.asarray(u8, dtype=np.uint8), 3).astype(np.float32)
+    return 1.4826 * float(np.median(np.abs(f - m)))
+
+
+def denoise_nlm(f):
+    u = np.clip(f, 0, 255).astype(np.uint8)
+    h = min(NLM_MAX_H, NLM_K * noise_sigma(u))
+    if h < NLM_MIN_H:
+        return f
+    return cv2.fastNlMeansDenoising(u, None, h=float(h), templateWindowSize=5, searchWindowSize=15).astype(np.float32)
+
+
+def restore_chart(img, conf=None, repair=True, flatten=True, binarize=False, denoise=True):
     """Restauration complète. img uint8 (H×W), conf uint8 0..255 ou float 0..1 (même taille) ou None."""
     a = np.asarray(img, dtype=np.uint8)
     if a.size == 0:
@@ -106,6 +133,8 @@ def restore_chart(img, conf=None, repair=True, flatten=True, binarize=False):
         if c is not None:
             impulse &= c < 0.8  # un point isolé bien reçu (pointillé, ponctuation) est conservé
         f[impulse] = med[impulse]
+    if denoise:
+        f = denoise_nlm(f)
     if flatten:
         f = flatten_paper(f)
         f = sharpen_anisotropic(f)

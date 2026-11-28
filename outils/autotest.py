@@ -3307,6 +3307,62 @@ def test_2110(app, root):
     check("2110 bouton revenu à « Stations »", app.btn_stations.cget("text") == "Stations")
 
 
+def test_2143(app, root):
+    """2.14.3 — débruitage NLM de la restauration et garde-fou du P.AMP automatique."""
+    print("2.14.3 — débruitage NLM, P.AMP : hausse impossible")
+    from wefax_station.dsp import chart_restore as CR
+    from wefax_station.radio.auto_preamp import AutoPreamp
+
+    rng = np.random.default_rng(7)
+    clean = np.full((300, 900), 245, np.uint8)
+    yy, xx = np.mgrid[0:300, 0:900]
+    for cx, cy, r in ((300, 150, 120), (600, 100, 200), (450, 400, 260)):
+        clean[np.abs(np.hypot(xx - cx, yy - cy) - r) < 1.6] = 20  # isobares
+    for k in range(60):  # chiffres
+        x0, y0 = int(rng.uniform(5, 880)), int(rng.uniform(5, 290))
+        clean[y0 : y0 + 7, x0 : x0 + 4] = rng.choice([20, 245], size=(7, 4))
+
+    def corr(a):
+        return float(np.corrcoef(a.ravel().astype(float), clean.ravel().astype(float))[0, 1])
+
+    noisy = np.clip(clean + rng.normal(0, 22, clean.shape), 0, 255).astype(np.uint8)
+    c_off = corr(CR.restore_chart(noisy, None, denoise=False))
+    c_on = corr(CR.restore_chart(noisy, None, denoise=True))
+    p_off = corr(CR.restore_chart(clean, None, denoise=False))
+    p_on = corr(CR.restore_chart(clean, None, denoise=True))
+    check(
+        "NLM : carte bruitée nettement améliorée, carte propre inchangée",
+        c_on > c_off + 0.03 and abs(p_on - p_off) < 0.002,
+        f"bruitée {c_off:.3f} → {c_on:.3f} ; propre {p_off:.3f} → {p_on:.3f}",
+    )
+
+    ap = AutoPreamp()
+    ap.set_mode("WEFAX")
+    ap.base_level = ap.expected_level = 1
+    t, lvl = 0.0, 1
+    for _ in range(40):
+        r = ap.step(t, 24.0, lvl, s_raw=120)
+        lvl = r if r is not None else lvl
+        t += 6
+    for _ in range(12):
+        r = ap.step(t, 0.0, lvl, s_raw=120)
+        t += 6
+        if r is not None:
+            lvl = ap.expected_level = r
+            break
+    tried = lvl
+    for _ in range(12):
+        r = ap.step(t, 28.8, lvl, s_raw=120)
+        t += 6
+        if r is not None:
+            lvl = ap.expected_level = r
+    check(
+        "P.AMP : « SNR 0,0 → 28,8 dB » (28/11 12:06) attribué au retour du signal, pas gardé",
+        tried == 2 and lvl == 1 and not any("gardé" in e[1] for e in ap.events[-3:]),
+        ap.events[-1][1] if ap.events else "",
+    )
+
+
 def test_2111(app, root):
     print("2.11.1 — choix opérateur : l'automatisme continue de décider (nuit du 24/11)")
     arb = app.hybrid_arbiter
@@ -3387,6 +3443,7 @@ def main():
             test_2100_core,
             test_2110,
             test_2111,
+            test_2143,
             test_scan,
             test_ui,
         )

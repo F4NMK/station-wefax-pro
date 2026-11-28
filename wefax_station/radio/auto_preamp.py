@@ -50,6 +50,13 @@ CHART_FADED_TICKS = 3
 # 17:30 (GYA3) : essais de 17:12 et 17:19 à +0,2 et +0,3 dB, puis « P.AMP 2 gardé : SNR 0,0 → 9,6 dB »
 # alors que la référence était à 11,1 dB : le signal revenait simplement.
 PLAUSIBLE_GAIN_DB = 6.0
+# 2.14.3 — garde-fou rendu systématique. Le 28/11 à 12:06 (GYA4, carte en cours), premier essai : « P.AMP 2
+# gardé : SNR 0,0 → 28,8 dB (+28,8) », mesuré du fond d'un fading à sa fin ; le P.AMP 2 est resté à S9+7.
+# Un préampli n'améliore le SNR que si le bruit propre du récepteur domine : quelques dB, jamais 28.
+# Au-delà de MAX_PREAMP_GAIN_DB, ou au-delà de PLAUSIBLE_GAIN_DB depuis un SNR de départ non mesurable,
+# la hausse est attribuée au retour du signal, comme après des essais inutiles (2.9.7).
+MAX_PREAMP_GAIN_DB = 10.0
+UNMEASURABLE_SNR_DB = 1.0
 # 2.9.8 — signal confortable : aucun essai de montée. Le 19/11 à 18:00:53 (DDK3, analyse de 18:00), essai de
 # P.AMP 2 à SNR 31,4 dB (référence 39,4) : SNR −23,8 dB pendant l'essai, image marquée pour rien.
 COMFORT_MARGIN_DB = 10.0
@@ -167,7 +174,14 @@ class AutoPreamp:
             if up:
                 keep_db = CHART_KEEP_GAIN_DB if self.trial_in_chart else KEEP_GAIN_DB
                 recent_futile = any(m == self.mode and now - t <= FUTILE_MEMORY_S for t, m in self.futile_times)
-                if gain >= keep_db and gain > PLAUSIBLE_GAIN_DB and recent_futile:
+                implausible = gain > MAX_PREAMP_GAIN_DB or (
+                    gain > PLAUSIBLE_GAIN_DB and (recent_futile or self.before_snr < UNMEASURABLE_SNR_DB)
+                )
+                if gain >= keep_db and implausible:
+                    if recent_futile and gain <= MAX_PREAMP_GAIN_DB:
+                        why = "mais les essais précédents n'apportaient rien"
+                    else:
+                        why = f"hausse de {gain:.1f} dB impossible pour un préampli"
                     # 2.9.7 — mesure faussée par la remontée du signal : rien n'est attribué au préampli
                     self.boosted_by_auto = True
                     if self.trial_in_chart:
@@ -175,9 +189,9 @@ class AutoPreamp:
                         # jusqu'au STOP, puis la descente normale le ramène au réglage de base
                         self._log(
                             now,
-                            f"P.AMP {level} : SNR {self.before_snr:.1f} → {after:.1f} dB, mais les essais précédents "
-                            "n'apportaient rien : c'est le fading qui remonte, pas le préampli. Cran laissé jusqu'à "
-                            "la fin de la carte, puis retour au réglage de base",
+                            f"P.AMP {level} : SNR {self.before_snr:.1f} → {after:.1f} dB, {why} : c'est le fading qui "
+                            "remonte, pas le préampli. Cran laissé jusqu'à la fin de la carte, puis retour au réglage "
+                            "de base",
                         )
                         self.last_action_t = now
                         return None
@@ -186,8 +200,8 @@ class AutoPreamp:
                     return self._act(
                         now,
                         self.before_level,
-                        f"P.AMP {level} : SNR {self.before_snr:.1f} → {after:.1f} dB, mais les essais précédents "
-                        f"n'apportaient rien : c'est le fading qui remonte → retour P.AMP {self.before_level}",
+                        f"P.AMP {level} : SNR {self.before_snr:.1f} → {after:.1f} dB, {why} : c'est le fading qui "
+                        f"remonte → retour P.AMP {self.before_level}",
                     )
                 if gain >= keep_db:
                     self.boosted_by_auto = True

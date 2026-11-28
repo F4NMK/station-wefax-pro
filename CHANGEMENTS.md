@@ -1,3 +1,33 @@
+# Version 2.14.3 (28/11/2026) — netteté : débruitage NLM adaptatif, P.AMP automatique fiabilisé
+
+## Constaté (capture F4NMK du 28/11, DDK3 à S9+7)
+* Fond moucheté, chiffres empâtés en taches noires, isobares hachées ; P.AMP 2 à S9+7.
+* La restauration accentuait le bruit : l'accentuation et la courbe de tons noircissaient les amas de bruit.
+* Journal 12:06 : « P.AMP 2 gardé : SNR 0,0 → 28,8 dB (+28,8) » — fin d'un fading attribuée au préampli.
+
+## Débruitage NLM (moyennes non locales) dans la restauration (`dsp/chart_restore.py`)
+* Après la réparation guidée par la confiance, avant l'accentuation. Force adaptée au bruit mesuré sur la
+  carte (h = 2,5 σ) : rien sur une carte propre, action sur les cartes bruitées seulement.
+* Banc HF (filtre FI du poste, 3 tirages, deux cartes de test dont une à pointillé), corrélation carte
+  restaurée / émise : 10 dB + fading 0,629 → 0,810 et 0,602 → 0,707 ; 12 dB fading fort 0,632 → 0,701 ;
+  18 dB + fading 0,798 → 0,812 ; fading + QRN 0,747 → 0,795 ; 30 dB et QRN seul inchangés ; jamais pire.
+* Écarté après mesure : force fixe (efface le pointillé : QRN 0,888 → 0,848) ; netteté « Détail » sous
+  fading (0,803 → 0,729) ; suppression des points isolés (+0,002) ; AGC du poste MID / SLOW / coupé
+  (écarts ≤ 0,02, SLOW et coupé moins bons sous QRN) : l'AGC reste FAST.
+* Limite : les chiffres restent épais sous fading (bande vidéo étroite du démodulateur) ; le NLM nettoie
+  le fond et rend les isobares continues, il ne recrée pas un détail perdu à la réception.
+* Coût : ≈ 0,6 s de plus par restauration complète (carte de 1 250 lignes).
+
+## P.AMP automatique (`radio/auto_preamp.py`)
+* Garde-fou rendu systématique : une hausse de SNR de plus de 10 dB, ou de plus de 6 dB depuis un SNR de
+  départ non mesurable (< 1 dB), est attribuée au retour du signal, plus au préampli. Pendant une carte, le
+  cran reste jusqu'au STOP (pas de commutation de plus sur l'image), puis retour au réglage de base.
+* Un vrai gain modeste (8 → 11 dB) reste gardé.
+
+## Vérifié
+* Autotest 240/241 (nouveaux contrôles NLM et P.AMP) ; seul échec « 2110 contrôles WEFAX », déjà présent.
+* Non vérifié sur l'air : à juger sur les prochaines cartes reçues.
+
 # Version 2.14.2 (28/11/2026) — cartes WEFAX prioritaires, fichiers réduits
 
 ## Cartes WEFAX prioritaires (décision F4NMK du 28/11 : « c'est l'objectif premier de cette application »)
